@@ -2,6 +2,8 @@
 
 # Genstrio
 
+**[▶ Open Genstrio in your browser](https://technikweber.github.io/Genstrio/)** – nothing to install.
+
 Parametric generators for 3D printing. Enter a few dimensions, watch the model being built in 3D, and download it as **STL**, **3MF** or **STEP**.
 
 Genstrio runs entirely in your browser: the geometry is computed locally by a real CAD kernel (OpenCascade compiled to WebAssembly). No account, no upload, no server-side processing.
@@ -18,9 +20,9 @@ The interface is in English; the **DE** button in the header switches to German.
 
 More generators are planned, see [Roadmap](#roadmap).
 
-## Quick start
+## Run it locally
 
-You need [Node.js](https://nodejs.org) 20.19 or newer.
+The hosted version above is all you need. To run Genstrio on your own machine, you need [Node.js](https://nodejs.org) 20.19 or newer.
 
 ```bash
 git clone https://github.com/TechnikWeber/Genstrio.git && cd Genstrio && ./genstrio

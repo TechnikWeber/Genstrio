@@ -2,6 +2,8 @@
 
 # Genstrio
 
+**[▶ Genstrio im Browser öffnen](https://technikweber.github.io/Genstrio/)** – ohne Installation.
+
 Parametrische Generatoren für den 3D-Druck. Ein paar Maße eingeben, dem Modell beim Entstehen in 3D zusehen und es als **STL**, **3MF** oder **STEP** herunterladen.
 
 Genstrio läuft vollständig im Browser: Die Geometrie berechnet ein echter CAD-Kern (OpenCascade, nach WebAssembly kompiliert) lokal auf deinem Rechner. Kein Konto, kein Upload, keine Verarbeitung auf einem Server.
@@ -18,7 +20,9 @@ Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch
 
 Weitere Generatoren sind geplant, siehe [Roadmap](#roadmap).
 
-## Schnellstart
+## Lokal starten
+
+Die gehostete Version oben reicht völlig. Für den Betrieb auf dem eigenen Rechner:
 
 Du brauchst [Node.js](https://nodejs.org) 20.19 oder neuer.
 
