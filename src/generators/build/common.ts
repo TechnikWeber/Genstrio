@@ -62,6 +62,32 @@ export function revolveZ(points: RZ[]): Shape3D {
   return (pen.close().sketchOnPlane('XZ') as Sketch).revolve() as Shape3D;
 }
 
+const camCache = new Map<string, Shape3D>();
+
+/**
+ * A threaded rod along +Z, from z = -runout to len + runout, with a rounded thread: a
+ * circle, set off-centre by half the thread depth, extruded with one twist per
+ * pitch. The flanks have the 30° of a V thread at mid-depth, and the single
+ * smooth surface is something the kernel cuts reliably, unlike a groove swept
+ * along a helix. Cut it out of a part for an internal thread, or cut away
+ * everything around it for an external one. `rMajor` is the crest radius.
+ */
+export function threadCam(rMajor: number, pitch: number, len: number, runout = 1): Shape3D {
+  const key = `${rMajor.toFixed(3)}/${pitch.toFixed(3)}/${len.toFixed(2)}/${runout}`;
+  let cam = camCache.get(key);
+  if (!cam) {
+    const e = threadDepth(pitch) / 2;
+    const height = len + 2 * runout;
+    const circle = drawCircle(rMajor - e).translate(e, 0).sketchOnPlane('XY', -runout) as Sketch;
+    cam = circle.extrude(height, { twistAngle: (360 * height) / pitch }) as Shape3D;
+    if (camCache.size > 12) camCache.clear();
+    camCache.set(key, cam);
+  }
+  return cam.clone() as Shape3D;
+}
+
+export const threadDepth = (pitch: number) => 0.54 * pitch;
+
 export type Pattern = 'slots' | 'holes' | 'hex' | 'triangles' | 'grid';
 
 export interface Cell {

@@ -5,6 +5,9 @@ import { defaults, fromTemplate, newItem, sanitize, type FieldDef, type Generato
 import { getLang, setLang, t, type Lang } from './i18n';
 import { Viewer } from './viewer';
 
+declare const __APP_VERSION__: string;
+declare const __APP_COMMIT__: string;
+
 const STORAGE_KEY = 'genstrio:v2';
 const FORMATS: ExportFormat[] = ['stl', '3mf', 'step'];
 
@@ -25,6 +28,8 @@ interface Saved {
   params?: Partial<Record<GeneratorId, Record<string, unknown>>>;
   /** Which parameter groups are unfolded, by `generator.group`. */
   open?: Record<string, boolean>;
+  /** Templates the user saved, by generator and name. */
+  templates?: Partial<Record<GeneratorId, Record<string, Record<string, unknown>>>>;
 }
 
 function load(): Saved {
@@ -37,6 +42,7 @@ function load(): Saved {
 
 const saved = load();
 const openGroups: Record<string, boolean> = saved.open ?? {};
+const userTemplates = saved.templates ?? {};
 
 // A shared link carries the generator and its parameters in the URL fragment.
 try {
@@ -66,7 +72,7 @@ const params = Object.fromEntries(
 
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, params, open: openGroups }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, params, open: openGroups, templates: userTemplates }));
   } catch {
     // Private mode or blocked storage: the app works without persistence.
   }
@@ -321,14 +327,35 @@ function renderForm() {
   form.scrollTop = scroll;
 }
 
-function renderTemplates() {
-  const names = Object.keys(GENERATORS[current].templates ?? {});
-  templateEl.hidden = !names.length;
+const USER = 'user:';
+
+function renderTemplates(selected = '') {
+  const builtIn = Object.keys(GENERATORS[current].templates ?? {});
+  const mine = Object.keys(userTemplates[current] ?? {});
+  const group = (label: string, options: HTMLOptionElement[]) => {
+    const node = el('optgroup', { label });
+    node.append(...options);
+    return node;
+  };
   templateEl.replaceChildren(
     el('option', { value: '', textContent: t('app.template') }),
-    ...names.map((name) => el('option', { value: name, textContent: t(`${current}.template.${name}`) })),
+    ...(mine.length ? [group(t('app.templatesMine'), mine.map((name) => el('option', { value: USER + name, textContent: name })))] : []),
+    group(t('app.templatesBuiltIn'), builtIn.map((name) => el('option', { value: name, textContent: t(`${current}.template.${name}`) }))),
   );
+  templateEl.value = selected;
   templateEl.setAttribute('aria-label', t('app.template'));
+  $<HTMLButtonElement>('#tpl-delete').disabled = !selected.startsWith(USER);
+}
+
+/** Switch to a generator with the given values, e.g. from a project file. */
+function open(generator: GeneratorId, values: Record<string, unknown>) {
+  current = generator;
+  params[current] = sanitize(GENERATORS[current], values);
+  fitPending = true;
+  lastNotes = { notes: [] };
+  save();
+  renderChrome();
+  rebuild();
 }
 
 /** Offer the parts of the finished model for separate export and, if they fit together, the assembled view. */
@@ -358,6 +385,13 @@ function renderChrome() {
   fit.setAttribute('aria-label', t('app.fit'));
   $('#reset').textContent = t('app.reset');
   shareEl.textContent = t('app.share');
+  $('#project-label').textContent = t('app.project');
+  $('#tpl-save').textContent = t('app.templateSave');
+  $('#tpl-delete').textContent = t('app.templateDelete');
+  $('#file-save').textContent = t('app.fileSave');
+  $('#file-open').textContent = t('app.fileOpen');
+  $<HTMLInputElement>('#tpl-name').placeholder = t('app.templateName');
+  $('#version').textContent = `Genstrio ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}`;
   assembledEl.textContent = t('app.assembled');
   onlyEl.setAttribute('aria-label', t('app.parts'));
   partNames = '';
@@ -407,11 +441,49 @@ assembledEl.addEventListener('click', () => {
   renderStatus();
 });
 templateEl.addEventListener('change', () => {
-  if (!templateEl.value) return;
-  params[current] = fromTemplate(GENERATORS[current], templateEl.value);
+  const name = templateEl.value;
+  $<HTMLButtonElement>('#tpl-delete').disabled = !name.startsWith(USER);
+  if (!name) return;
+  const mine = userTemplates[current]?.[name.slice(USER.length)];
+  params[current] = name.startsWith(USER) && mine ? sanitize(GENERATORS[current], structuredClone(mine)) : fromTemplate(GENERATORS[current], name);
   fitPending = true;
   renderForm();
   scheduleRebuild();
+});
+$('#tpl-save').addEventListener('click', () => {
+  const input = $<HTMLInputElement>('#tpl-name');
+  const name = input.value.trim();
+  if (!name) return input.focus();
+  (userTemplates[current] ??= {})[name] = structuredClone(params[current]);
+  input.value = '';
+  save();
+  renderTemplates(USER + name);
+});
+$('#tpl-delete').addEventListener('click', () => {
+  delete userTemplates[current]?.[templateEl.value.slice(USER.length)];
+  save();
+  renderTemplates();
+});
+$('#file-save').addEventListener('click', () => {
+  const project = { app: 'genstrio', version: __APP_VERSION__, generator: current, params: params[current] };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }));
+  el('a', { href: url, download: `genstrio-${current}.json` }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+});
+const fileInput = $<HTMLInputElement>('#file-input');
+$('#file-open').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files?.[0];
+  fileInput.value = '';
+  if (!file) return;
+  try {
+    const project = JSON.parse(await file.text()) as { app?: string; generator?: GeneratorId; params?: Record<string, unknown> };
+    if (project.app !== 'genstrio' || !project.generator || !GENERATOR_IDS.includes(project.generator) || !project.params) throw new Error('not a Genstrio project');
+    open(project.generator, project.params);
+  } catch {
+    lastNotes = { notes: [], error: 'err.badFile' };
+    renderNotes();
+  }
 });
 shareEl.addEventListener('click', async () => {
   const link = shareLink();
@@ -427,7 +499,7 @@ shareEl.addEventListener('click', async () => {
 });
 $('#reset').addEventListener('click', () => {
   params[current] = defaults(GENERATORS[current]);
-  templateEl.value = '';
+  renderTemplates();
   fitPending = true;
   renderForm();
   scheduleRebuild();

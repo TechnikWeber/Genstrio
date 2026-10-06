@@ -1,7 +1,7 @@
 import { draw, drawCircle, drawPolysides, makeCylinder, type Drawing, type Shape3D, type Sketch } from 'replicad';
 import { BOARDS } from '../boards';
 import type { Note } from '../types';
-import { cutAll, fuseAll, patternCells, prism, revolveZ, round1, roundedRect, type Build, type Part, type Pattern } from './common';
+import { cutAll, fuseAll, patternCells, prism, revolveZ, round1, roundedRect, threadCam, type Build, type Part, type Pattern } from './common';
 
 type Side = 'front' | 'back' | 'left' | 'right';
 type Vent = 'none' | Pattern;
@@ -70,14 +70,19 @@ export interface EnclosureParams {
   lidVentLength: number;
   lidVentArea: number;
   bodyVent: Vent;
-  bodyVentWalls: 'sides' | 'frontback' | 'all' | 'floor';
+  bodyVentWalls: 'none' | 'sides' | 'frontback' | 'all';
+  bodyVentFloor: boolean;
   bodyVentSize: number;
   bodyVentGap: number;
   bodyVentLength: number;
   bodyVentArea: number;
   ears: 'none' | 'two' | 'four';
   earHole: number;
-  dinClip: boolean;
+  earSides: 'leftright' | 'frontback';
+  earSpacing: number;
+  earOffset: number;
+  din: 'none' | Side | 'floor';
+  dinOffset: number;
 }
 
 // d: nominal, pilot: self-tapping core hole, clear: through hole,
@@ -149,31 +154,8 @@ const Z: [number, number, number] = [0, 0, 1];
 const RAD = Math.PI / 180;
 const SIDE_DIR: Record<Side, number> = { front: 0, right: 90, back: 180, left: 270 };
 
-const threadCache = new Map<string, Shape3D>();
-
-/**
- * Cutting tool for an internal thread along +Z, from z = 0 to `len`, with
- * run-out past both ends. It is a circle, set off-centre by half the thread
- * depth, extruded with one twist per pitch. That gives a rounded thread whose
- * flanks have the 30° of a V thread at mid-depth, and a single smooth surface
- * that the kernel cuts reliably, unlike a groove swept along a helix.
- * Tools are cached, since building one still takes a moment.
- */
-export function threadTool(name: keyof typeof THREADS, len: number): Shape3D {
-  const key = `${name}/${len.toFixed(2)}`;
-  let tool = threadCache.get(key);
-  if (!tool) {
-    const [major, pitch] = THREADS[name];
-    const rMajor = major / 2 + 0.2; // printed holes come out tight
-    const e = 0.27 * pitch;
-    const height = len + 2;
-    const cam = drawCircle(rMajor - e).translate(e, 0).sketchOnPlane('XY', -1) as Sketch;
-    tool = cam.extrude(height, { twistAngle: (360 * height) / pitch }) as Shape3D;
-    if (threadCache.size > 12) threadCache.clear();
-    threadCache.set(key, tool);
-  }
-  return tool.clone() as Shape3D;
-}
+/** Cutting tool for an internal thread along +Z, from z = 0 to `len`, with run-out past both ends. */
+const threadTool = (name: keyof typeof THREADS, len: number): Shape3D => threadCam(THREADS[name][0] / 2 + 0.2, THREADS[name][1], len); // printed holes come out tight
 
 /** A flat or curved stretch of side wall. `dir` turns the front wall (−Y) about Z onto it. */
 interface Wall {
@@ -446,20 +428,18 @@ export function* buildEnclosure(p: EnclosureParams): Build {
   if (p.ears !== 'none') {
     const er = p.earHole / 2 + 4.5;
     const eh = Math.max(t, 3);
-    const spots: [Wall, number][] = [];
-    if (p.shape === 'box') {
-      const u = p.ears === 'four' ? p.width / 2 - er - Math.max(cornerR, 1) : 0;
-      for (const side of ['left', 'right'] as Side[]) for (const s of u > er ? [-1, 1] : [0]) spots.push([wallOf(side), s * u]);
-    } else {
-      const sides: Side[] = p.ears === 'four' ? ['front', 'right', 'back', 'left'] : ['left', 'right'];
-      for (const wall of new Set(sides.map(wallOf))) spots.push([wall, 0]);
-    }
-    for (const [wall, u] of spots) {
-      // Reaches into the wall; whatever would poke into the interior is cut off again.
-      const reach = t + 1 + sag(wall, er);
-      const tab = prism(roundedRect(2 * er, 2 * er + reach, er - 0.01).translate(0, -wall.dist - er + reach / 2), eh);
-      adds.push(place(tab.cut(cavity) as Shape3D, wall, u));
-      cuts.push(place(makeCylinder(p.earHole / 2, eh + 2, [0, -wall.dist - er, -1]) as Shape3D, wall, u));
+    const sides: Side[] = p.earSides === 'frontback' ? ['front', 'back'] : ['left', 'right'];
+    for (const wall of new Set(sides.map(wallOf))) {
+      const room = wall.width - 2 * (er + (wall.curved ? 0 : Math.max(cornerR, 1)));
+      const spacing = p.earSpacing > 0 ? Math.min(p.earSpacing, room) : room;
+      const pair = p.ears === 'four' && spacing > 2 * er + 2;
+      for (const u of pair ? [-spacing / 2, spacing / 2] : [0]) {
+        // Reaches into the wall so the two fuse; whatever would poke into the interior is cut off again.
+        const reach = t + 1 + sag(wall, er);
+        const tab = prism(roundedRect(2 * er, 2 * er + reach, er - 0.01).translate(0, -wall.dist - er + reach / 2), eh);
+        adds.push(place(tab, wall, u + p.earOffset).cut(cavity) as Shape3D);
+        cuts.push(place(makeCylinder(p.earHole / 2, eh + 2, [0, -wall.dist - er, -1]) as Shape3D, wall, u + p.earOffset));
+      }
     }
   }
 
@@ -544,20 +524,29 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     }
   }
 
-  // --- DIN rail clip on the back wall ---------------------------------------
-  // Drawn from above and extruded upwards, so it prints without support. The
-  // rail (35 mm top hat) then runs along the height of the enclosure.
-  if (p.dinClip && !backWall) warn('note.needsFlatBack');
-  else if (p.dinClip && backWall) {
-    const d = backWall.dist;
-    const hook = (pts: [number, number][]) => {
-      let pen = draw([pts[0][0], -d - pts[0][1]]);
-      for (const [x, v] of pts.slice(1)) pen = pen.lineTo([x, -d - v]);
-      return place(prism(pen.close(), Math.min(hb, 30)), backWall, 0);
-    };
-    adds.push(hook([[17.7, -0.3], [21, -0.3], [21, 3.2], [15.9, 3.2], [15.9, 1.4], [17.7, 1.4]])); // fixed hook
-    adds.push(hook([[-17.7, -0.3], [-17.7, 1.4], [-16.9, 1.4], [-16.9, 1.8], [-18.2, 4.4], [-19.4, 4.4], [-19.4, -0.3]])); // springy latch
-    notes.push({ level: 'info', key: 'note.dinClip' });
+  // --- DIN rail clip (35 mm top hat rail) -----------------------------------
+  // A fixed hook and a springy latch, given as (position across the rail, depth away from the surface).
+  const DIN_HOOK: [number, number][] = [[17.7, -0.3], [21, -0.3], [21, 3.2], [15.9, 3.2], [15.9, 1.4], [17.7, 1.4]];
+  const DIN_LATCH: [number, number][] = [[-17.7, -0.3], [-17.7, 1.4], [-16.9, 1.4], [-16.9, 1.8], [-18.2, 4.4], [-19.4, 4.4], [-19.4, -0.3]];
+  let lift = 0; // a clip under the floor raises the body off the bed
+  if (p.din === 'floor') {
+    // Under the floor the rail runs along X. This is how DIN devices usually sit, but it prints on supports.
+    const len = Math.min(30, 2 * out.hx - 8);
+    for (const pts of [DIN_HOOK, DIN_LATCH]) adds.push(yzPrism(pts.map(([y, v]): [number, number] => [y + p.dinOffset, -v]), -len / 2, len));
+    lift = 4.4;
+    notes.push({ level: 'info', key: 'note.dinFloor' });
+  } else if (p.din !== 'none') {
+    // On a wall the clip is drawn from above and extruded upwards, so it prints without support; the rail runs along the height.
+    const wall = wallOf(p.din);
+    if (wall.curved) warn('note.needsFlatWall');
+    else {
+      for (const pts of [DIN_HOOK, DIN_LATCH]) {
+        let pen = draw([pts[0][0], -wall.dist - pts[0][1]]);
+        for (const [x, v] of pts.slice(1)) pen = pen.lineTo([x, -wall.dist - v]);
+        adds.push(place(prism(pen.close(), Math.min(hb, 30)), wall, p.dinOffset));
+      }
+      notes.push({ level: 'info', key: 'note.dinClip' });
+    }
   }
 
   // --- twist lock (round bodies) --------------------------------------------
@@ -683,11 +672,12 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     return result.cells;
   };
 
-  if (p.bodyVent !== 'none' && p.bodyVentWalls === 'floor') {
+  if (p.bodyVent !== 'none' && p.bodyVentFloor) {
     const cells = plateVent(p.bodyVent, p.bodyVentSize, p.bodyVentGap, p.bodyVentLength, p.bodyVentArea, t + 2, floorBlocked);
     if (!cells.length) warn('note.noRoomBodyVents');
     for (const c of cells) cuts.push(prism(c.drawing.translate(c.x, c.y), t + 2, -1));
-  } else if (p.bodyVent !== 'none') {
+  }
+  if (p.bodyVent !== 'none' && p.bodyVentWalls !== 'none') {
     const sides: Side[] = p.bodyVentWalls === 'sides' ? ['left', 'right'] : p.bodyVentWalls === 'frontback' ? ['front', 'back'] : [];
     const walls = sides.length ? [...new Set(sides.map(wallOf))] : out.walls;
     const zTop = hb - lipH - 1.5;
@@ -717,6 +707,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
   }
 
   // --- lid, modelled in place on top of the body ----------------------------
+  if (lift) body = body.translate(0, 0, lift);
   const parts: Part[] = [{ name: 'body', shape: body }];
   if (hasLid) {
     let lid = prism(out.profile(0), lidT, hb);
@@ -759,7 +750,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
 
     // Flip it over for printing: outside face on the bed, next to the body.
     const offset: [number, number, number] = [body.boundingBox.bounds[1][0] + 10 + out.hx, 0, H];
-    parts.push({ name: 'lid', shape: lid.rotate(180, O, Y).translate(...offset), assembled: { flip: true, offset } });
+    parts.push({ name: 'lid', shape: lid.rotate(180, O, Y).translate(...offset), assembled: { flip: true, offset: [offset[0], 0, H + lift] } });
     yield { label: 'stage.lid', parts };
   }
 

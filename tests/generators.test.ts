@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import opencascade from 'replicad-opencascadejs';
-import { measureVolume, setOC, type Shape3D } from 'replicad';
+import { makeBaseBox, measureVolume, setOC, type Shape3D } from 'replicad';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BUILDERS, ParamError, type BuildResult, type Stage } from '../src/generators/build';
 import { GENERATORS } from '../src/generators/meta';
@@ -136,7 +136,13 @@ describe('enclosure', () => {
       expect(result.parts[0].shape.solids.length).toBe(1);
       expect(result.parts[1].shape.solids.length).toBe(1);
     }
-    expect(volumes({ ...plain, bodyVent: 'hex', bodyVentWalls: 'floor', bodyVentSize: 5 })[0]).toBeLessThan(body0 - 100);
+    const floorOnly = volumes({ ...plain, bodyVent: 'hex', bodyVentWalls: 'none', bodyVentFloor: true, bodyVentSize: 5 })[0];
+    const wallsOnly = volumes({ ...plain, bodyVent: 'hex', bodyVentWalls: 'sides', bodyVentSize: 5 })[0];
+    const both = volumes({ ...plain, bodyVent: 'hex', bodyVentWalls: 'sides', bodyVentFloor: true, bodyVentSize: 5 })[0];
+    expect(floorOnly).toBeLessThan(body0 - 100);
+    expect(wallsOnly).toBeLessThan(body0 - 100);
+    // Walls and floor are chosen independently and add up.
+    expect(body0 - both).toBeCloseTo(body0 - floorOnly + (body0 - wallsOnly), 0);
     // Lid and body are independent.
     const [body, lid] = volumes({ ...plain, lidVent: 'holes' });
     expect(body).toBeCloseTo(body0, 3);
@@ -205,6 +211,15 @@ describe('enclosure', () => {
     const eared = run('enclosure', { ...plain, ears: 'four' }).result.parts[0].shape;
     expect(size(eared)[0]).toBeGreaterThan(w0 + 20);
     expect(eared.solids.length).toBe(1);
+    // Ears stay outside: the interior is as empty as without them.
+    const interior = () => makeBaseBox(116 - 0.2, 76 - 0.2, 3).translate(0, 0, 2.1) as Shape3D;
+    const bare = run('enclosure', { ...plain, pcb: false, lidFix: 'none' }).result.parts[0].shape;
+    const withEars = run('enclosure', { ...plain, pcb: false, lidFix: 'none', ears: 'four' }).result.parts[0].shape;
+    expect(measureVolume(withEars.intersect(interior()) as Shape3D)).toBeCloseTo(measureVolume(bare.intersect(interior()) as Shape3D), 3);
+    // Side, spacing and offset are free.
+    const front = run('enclosure', { ...plain, ears: 'four', earSides: 'frontback', earSpacing: 40, earOffset: 15 }).result.parts[0].shape;
+    expect(size(front)[0]).toBeCloseTo(120, 1);
+    expect(size(front)[1]).toBeGreaterThan(80 + 20);
 
     const hole = volumes({ ...plain, openings: [opening({ type: 'gland', thread: 'PG9', height: 15 })] })[0];
     const { result } = run('enclosure', { ...plain, openings: [opening({ type: 'gland', thread: 'PG9', height: 15, printThread: true })] });
@@ -246,9 +261,19 @@ describe('enclosure', () => {
     expect(sealed.result.parts[0].shape.solids.length).toBe(1);
     expect(warnings(run('enclosure', { ...plain, gasket: true, gasketWidth: 2 }).result)).toContain('note.noRoomGasket');
 
-    const clipped = run('enclosure', { ...plain, dinClip: true }).result.parts[0].shape;
+    const clipped = run('enclosure', { ...plain, din: 'back' }).result.parts[0].shape;
     expect(clipped.solids.length).toBe(1);
     expect(clipped.boundingBox.bounds[1][1]).toBeCloseTo(44.4, 1);
+    const left = run('enclosure', { ...plain, din: 'left', dinOffset: 10 }).result.parts[0].shape;
+    expect(left.boundingBox.bounds[0][0]).toBeCloseTo(-64.4, 1);
+    expect(left.boundingBox.bounds[1][1]).toBeCloseTo(40, 1);
+    // Under the floor the clip lifts the body, and the assembled lid follows.
+    const under = run('enclosure', { ...plain, din: 'floor' }).result.parts;
+    expect(under[0].shape.solids.length).toBe(1);
+    expect(under[0].shape.boundingBox.bounds[0][2]).toBeCloseTo(0, 1);
+    expect(size(under[0].shape)[2]).toBeCloseTo(33 + 4.4, 1);
+    expect(under[1].assembled!.offset[2]).toBeCloseTo(35 + 4.4, 5);
+    expect(warnings(run('enclosure', { shape: 'round', din: 'back' }).result)).toContain('note.needsFlatWall');
 
     const twist = run('enclosure', { ...plain, shape: 'round', diameter: 80, pcb: false, lidFix: 'twist' });
     expect(warnings(twist.result)).toEqual([]);
@@ -343,14 +368,53 @@ describe('adapter', () => {
     expect(run('adapter', { flange: 'between', angle: 45 }).result.parts[0].shape.solids.length).toBe(1);
     expect(warnings(run('adapter', { flange: 'end1', flangeDiameter: 40 }).result)).toContain('note.flangeNoRoomHoles');
 
-    const two = run('adapter', { barbCount: 2 });
-    const five = run('adapter', { barbCount: 5 });
+    const two = run('adapter', { barbCount2: 2 });
+    const five = run('adapter', { barbCount2: 5 });
     expect(measureVolume(five.result.parts[0].shape)).toBeGreaterThan(measureVolume(two.result.parts[0].shape) + 100);
-    const tall = run('adapter', { barbHeight: 2 });
+    const tall = run('adapter', { barbHeight2: 2 });
     const note = tall.result.notes.find((n) => n.key === 'note.barbs')!.vars!;
     expect(note.d).toBeCloseTo(39.7, 5); // the sleeve itself keeps the entered fit
     expect(note.peak).toBeCloseTo(43.7, 5);
     expect(size(tall.result.parts[0].shape)[0]).toBeCloseTo(43.7, 1);
+  });
+
+  it('sets barbs on both ends independently', () => {
+    const { result } = run('adapter', { fit1: 'inside', barbs1: true, barbCount1: 2, barbHeight1: 1.5, barbCount2: 5 });
+    const [one, other] = result.notes.filter((n) => n.key === 'note.barbs').map((n) => n.vars!);
+    expect([one.count, other.count]).toEqual([2, 5]);
+    expect(one.peak).toBeCloseTo(31.7 + 3, 5);
+    expect(other.peak).toBeCloseTo(39.7 + 1.6, 5);
+  });
+
+  it('uses standard sizes and cuts G threads', () => {
+    const hose = run('adapter', { std1: 'hose13', barbs1: true, std2: 'ht50' }).result;
+    const ends = hose.notes.filter((n) => n.key.startsWith('note.adapterEnd'));
+    expect(ends.map((n) => n.key)).toEqual(['note.adapterEnd.inside', 'note.adapterEnd.over']);
+    expect(ends[0].vars!.od).toBeCloseTo(12.7, 5);
+    expect(ends[1].vars!.id).toBeCloseTo(50.3, 5);
+
+    const male = run('adapter', { std1: 'g34m', len1: 14, std2: 'hose13', chamfer: 0, clearance: 0, barbs2: false });
+    const shape = male.result.parts[0].shape;
+    expect(shape.solids.length).toBe(1);
+    expect(size(shape)[0]).toBeCloseTo(26.14, 1); // crests reach the major diameter
+    // More than a sleeve at the root diameter, less than one at the crest diameter
+    const ring = (od: number) => (Math.PI / 4) * (od ** 2 - (26.14 - 2 * 0.98 - 4) ** 2) * 14;
+    const rest = measureVolume(run('adapter', { std1: 'hose13', len1: 1, std2: 'hose13', chamfer: 0, clearance: 0, barbs2: false, transition: 0 }).result.parts[0].shape);
+    expect(measureVolume(shape)).toBeGreaterThan(ring(26.14 - 2 * 0.98) + rest / 2);
+    expect(measureVolume(shape)).toBeLessThan(ring(26.14) + 2 * rest + 2000);
+    expect(male.result.notes.map((n) => n.key)).toContain('note.adapterEnd.male');
+
+    const female = run('adapter', { std1: 'g12f', len1: 14, std2: 'g34m', len2: 14, wall: 3 });
+    expect(female.result.parts[0].shape.solids.length).toBe(1);
+    expect(run('adapter', { std1: 'g34f', std2: 'g34m', angle: 90 }).result.parts[0].shape.solids.length).toBe(1);
+  });
+
+  it('builds every adapter template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.adapter.templates!)) {
+      const { result } = run('adapter', fromTemplate(GENERATORS.adapter, name));
+      expect(warnings(result), name).toEqual([]);
+      expect(result.parts[0].shape.solids.length, name).toBe(1);
+    }
   });
 
   it('chamfers the open ends and bends up to 180°', () => {
@@ -417,6 +481,14 @@ describe('organizer', () => {
     // …and shown at their place in the drawer
     const xs = narrow.instances!.map(([x]) => x + (narrow.shape.boundingBox.bounds[0][0] + narrow.shape.boundingBox.bounds[1][0]) / 2);
     expect(Math.max(...xs)).toBeCloseTo(287 / 2 - 287 / 8, 1);
+  });
+
+  it('builds every organizer template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.organizer.templates!)) {
+      const { result } = run('organizer', fromTemplate(GENERATORS.organizer, name));
+      expect(warnings(result), name).toEqual([]);
+      for (const part of result.parts) expect(part.shape.solids.length, name).toBe(1);
+    }
   });
 
   it('never exceeds the print bed in auto layout', () => {

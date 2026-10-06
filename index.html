@@ -28,8 +28,22 @@
           <span id="export-label"></span>
           <div id="export"></div>
           <select id="only"></select>
-          <button id="reset" type="button" class="ghost"></button>
-          <button id="share" type="button" class="ghost"></button>
+          <details id="project">
+            <summary id="project-label"></summary>
+            <div class="menu">
+              <div class="row">
+                <input id="tpl-name" type="text" maxlength="40" />
+                <button id="tpl-save" type="button" class="ghost"></button>
+              </div>
+              <button id="tpl-delete" type="button" class="ghost"></button>
+              <button id="file-save" type="button" class="ghost"></button>
+              <button id="file-open" type="button" class="ghost"></button>
+              <input id="file-input" type="file" accept=".json,application/json" hidden />
+              <button id="share" type="button" class="ghost"></button>
+              <button id="reset" type="button" class="ghost"></button>
+            </div>
+          </details>
+          <a id="version" href="https://github.com/TechnikWeber/Genstrio" target="_blank" rel="noopener"></a>
         </footer>
       </aside>
       <main>

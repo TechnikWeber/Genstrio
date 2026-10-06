@@ -1,27 +1,34 @@
 import { drawCircle, makeCylinder, type Shape3D, type Sketch } from 'replicad';
+import { FITTINGS } from '../fittings';
 import type { Note } from '../types';
-import { cutAll, ParamError, revolveZ as revolve, round1, type Build, type RZ } from './common';
+import { cutAll, ParamError, revolveZ as revolve, round1, threadCam, threadDepth, type Build, type RZ } from './common';
 
 type Fit = 'inside' | 'over';
+type Vec3 = [number, number, number];
 
 export interface AdapterParams {
+  std1: string;
   d1: number;
   fit1: Fit;
   len1: number;
   barbs1: boolean;
+  barbCount1: number;
+  barbHeight1: number;
+  barbPitch1: number;
+  std2: string;
   d2: number;
   fit2: Fit;
   len2: number;
   barbs2: boolean;
+  barbCount2: number;
+  barbHeight2: number;
+  barbPitch2: number;
   wall: number;
   transition: number;
   clearance: number;
   chamfer: number;
   angle: number;
   bendRadius: number;
-  barbCount: number;
-  barbHeight: number;
-  barbPitch: number;
   flange: 'none' | 'end1' | 'between';
   flangeDiameter: number;
   flangeThickness: number;
@@ -29,11 +36,36 @@ export interface AdapterParams {
   flangeHoleDiameter: number;
 }
 
-/** Radii of one end. `inside`: the adapter plugs into the pipe; `over`: it slides over it. */
-function endRadii(d: number, fit: Fit, wall: number, clr: number) {
-  const radii = fit === 'inside' ? { ro: (d - clr) / 2, ri: (d - clr) / 2 - wall } : { ri: (d + clr) / 2, ro: (d + clr) / 2 + wall };
-  if (radii.ri < 0.5) throw new ParamError('err.adapterNoBore');
-  return radii;
+interface End {
+  /** `inside`: plugs into the pipe; `over`: slides over it; `male`/`female`: threaded. */
+  kind: Fit | 'male' | 'female';
+  /** Nominal diameter of the mating part. */
+  d: number;
+  ri: number;
+  ro: number;
+  thread?: { rMajor: number; pitch: number };
+}
+
+/** Radii of one end, from a standard size or from the diameter and fit entered by hand. */
+function resolveEnd(std: string, d: number, fit: Fit, wall: number, clr: number): End {
+  const known = FITTINGS[std];
+  let end: End;
+  if (known?.thread) {
+    const { pitch, male } = known.thread;
+    // Printed threads bind easily, so the male one is made a little slimmer and the female one wider.
+    const rMajor = known.d / 2 + (male ? -0.15 : 0.2);
+    const rMinor = rMajor - threadDepth(pitch);
+    // The plain sleeve stays just clear of the thread surface: where the two would touch along a helix, the kernel chokes.
+    end = male
+      ? { kind: 'male', d: known.d, ro: rMinor - 0.1, ri: rMinor - wall, thread: { rMajor, pitch } }
+      : { kind: 'female', d: known.d, ri: rMinor - 0.1, ro: rMajor + wall, thread: { rMajor, pitch } };
+  } else {
+    const dd = known?.d ?? d;
+    const kind = known?.fit ?? fit;
+    end = kind === 'inside' ? { kind, d: dd, ro: (dd - clr) / 2, ri: (dd - clr) / 2 - wall } : { kind, d: dd, ri: (dd + clr) / 2, ro: (dd + clr) / 2 + wall };
+  }
+  if (end.ri < 0.5) throw new ParamError('err.adapterNoBore');
+  return end;
 }
 
 interface Barbs {
@@ -60,13 +92,24 @@ function sleeveOuter(ro: number, len: number, barbs: Barbs | null, chamfer = 0):
   return pts;
 }
 
+/**
+ * Turns a plain sleeve into a thread; the open end is at z = 0, the part lies towards +z.
+ * A male thread is added around the sleeve, a female one is cut out of it.
+ */
+function threadOf(end: End, len: number): { add?: Shape3D; cut?: Shape3D } {
+  if (!end.thread) return {};
+  const { rMajor, pitch } = end.thread;
+  if (end.kind === 'female') return { cut: threadCam(rMajor, pitch, len - 1) };
+  return { add: threadCam(rMajor, pitch, len, 0).cut(makeCylinder(end.ri, len + 2, [0, 0, -1]) as Shape3D) as Shape3D };
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const shift = (pts: RZ[], dz: number): RZ[] => pts.map(([rad, z]) => [rad, z + dz]);
 
 export function* buildAdapter(p: AdapterParams): Build {
   const notes: Note[] = [];
-  const a = endRadii(p.d1, p.fit1, p.wall, p.clearance);
-  const b = endRadii(p.d2, p.fit2, p.wall, p.clearance);
+  const a = resolveEnd(p.std1, p.d1, p.fit1, p.wall, p.clearance);
+  const b = resolveEnd(p.std2, p.d2, p.fit2, p.wall, p.clearance);
 
   // A cone steeper than 45° gets thin walls and needs support, so stretch it.
   const lt = Math.max(p.transition, Math.abs(a.ro - b.ro), Math.abs(a.ri - b.ri));
@@ -74,30 +117,34 @@ export function* buildAdapter(p: AdapterParams): Build {
 
   // A lead-in chamfer on the mating surface of each open end eases assembly.
   const c = Math.min(p.chamfer, p.wall * 0.5, p.len1 / 2, p.len2 / 2);
+  const outside = (end: End) => end.kind === 'inside';
   // No outer chamfer where a flange sits flush on the bed.
-  const c1 = p.fit1 === 'inside' ? [p.flange === 'end1' ? 0 : c, 0] : [0, c];
-  const c2 = p.fit2 === 'inside' ? [c, 0] : [0, c];
+  const chamfers = (end: End, flush: boolean) => (end.thread ? [0, 0] : outside(end) ? [flush ? 0 : c, 0] : [0, c]);
+  const c1 = chamfers(a, p.flange === 'end1');
+  const c2 = chamfers(b, false);
 
-  const barbsFor = (n: number, on: boolean, fit: Fit, len: number, ro: number): Barbs | null => {
-    if (!on || fit !== 'inside') return null;
-    const count = Math.min(Math.round(p.barbCount), Math.floor((len - 2.5) / p.barbPitch));
-    if (count < 1) return null;
-    notes.push({ level: 'info', key: 'note.barbs', vars: { n, count, d: round2(2 * ro), peak: round2(2 * (ro + p.barbHeight)) } });
-    return { count, height: p.barbHeight, pitch: p.barbPitch };
+  const barbsFor = (n: number, end: End, on: boolean, len: number, count: number, height: number, pitch: number): Barbs | null => {
+    if (!on || end.kind !== 'inside') return null;
+    const fits = Math.min(Math.round(count), Math.floor((len - 2.5) / pitch));
+    if (fits < 1) return null;
+    notes.push({ level: 'info', key: 'note.barbs', vars: { n, count: fits, d: round2(2 * end.ro), peak: round2(2 * (end.ro + height)) } });
+    return { count: fits, height, pitch };
   };
 
   // End 1 stands on the bed, z grows towards end 2.
-  const outerA = sleeveOuter(a.ro, p.len1, barbsFor(1, p.barbs1, p.fit1, p.len1, a.ro), c1[0]);
+  const outerA = sleeveOuter(a.ro, p.len1, barbsFor(1, a, p.barbs1, p.len1, p.barbCount1, p.barbHeight1, p.barbPitch1), c1[0]);
   const innerA: RZ[] = [[a.ri, p.len1], [a.ri, c1[1]], [a.ri + c1[1], 0]];
   const topB = lt + p.len2;
   const outerB: RZ[] = [
     [a.ro, 0],
-    ...sleeveOuter(b.ro, p.len2, barbsFor(2, p.barbs2, p.fit2, p.len2, b.ro), c2[0])
+    ...sleeveOuter(b.ro, p.len2, barbsFor(2, b, p.barbs2, p.len2, p.barbCount2, p.barbHeight2, p.barbPitch2), c2[0])
       .map(([rad, z]): RZ => [rad, topB - z])
       .reverse(),
   ];
   const innerB: RZ[] = [[b.ri + c2[1], topB], [b.ri, topB - c2[1]], [b.ri, lt], [a.ri, 0]];
 
+  // Turns something modelled at an upright end 2 (open end up at z = len1 + topB) into the elbow.
+  let bend = (shape: Shape3D) => shape;
   let shape: Shape3D;
   if (p.angle <= 0) {
     yield { label: 'stage.end1', parts: [{ name: 'adapter', shape: revolve([...outerA, ...innerA]) }] };
@@ -105,7 +152,8 @@ export function* buildAdapter(p: AdapterParams): Build {
   } else {
     const R = Math.max(p.bendRadius, a.ro + 1);
     if (R > p.bendRadius) notes.push({ level: 'info', key: 'note.bendRadiusRaised', vars: { r: round1(R) } });
-    const centre: [number, number, number] = [R, 0, p.len1];
+    const centre: Vec3 = [R, 0, p.len1];
+    bend = (part) => part.rotate(p.angle, centre, [0, 1, 0]);
     const sweep = (rad: number) =>
       (drawCircle(rad).sketchOnPlane('XY', p.len1) as Sketch).revolve([0, 1, 0], { origin: centre, angle: p.angle }) as Shape3D;
 
@@ -115,10 +163,15 @@ export function* buildAdapter(p: AdapterParams): Build {
     shape = shape.fuse(sweep(a.ro).cut(sweep(a.ri))) as Shape3D;
     yield { label: 'stage.bend', parts: [{ name: 'adapter', shape }] };
 
-    const end2 = revolve([...outerB, ...innerB]).translate(0, 0, p.len1).rotate(p.angle, centre, [0, 1, 0]);
-    shape = shape.fuse(end2) as Shape3D;
+    shape = shape.fuse(bend(revolve([...outerB, ...innerB]).translate(0, 0, p.len1))) as Shape3D;
     notes.push({ level: 'info', key: 'note.bendNeedsSupport' });
   }
+
+  const upright = (part: Shape3D) => bend(part.rotate(180, [0, 0, 0], [1, 0, 0]).translate(0, 0, p.len1 + topB));
+  const thread1 = threadOf(a, p.len1);
+  const thread2 = threadOf(b, p.len2);
+  for (const part of [thread1.add, thread2.add && upright(thread2.add)]) if (part) shape = shape.fuse(part) as Shape3D;
+  for (const part of [thread1.cut, thread2.cut && upright(thread2.cut)]) if (part) shape = shape.cut(part) as Shape3D;
 
   if (p.flange !== 'none') {
     const th = Math.min(p.flangeThickness, p.len1);
@@ -150,13 +203,11 @@ export function* buildAdapter(p: AdapterParams): Build {
   }
 
   // The entered diameter always stays the mating surface; the wall grows away from it.
-  for (const [n, fit, d, e] of [[1, p.fit1, p.d1, a], [2, p.fit2, p.d2, b]] as const) {
-    notes.push({
-      level: 'info',
-      key: `note.adapterEnd.${fit}`,
-      vars: { n, d: round1(d), id: round2(e.ri * 2), od: round2(e.ro * 2) },
-    });
+  for (const [n, e] of [[1, a], [2, b]] as const) {
+    const vars: Record<string, number> = e.thread ? { n, d: round2(e.d), pitch: round2(e.thread.pitch) } : { n, d: round1(e.d), id: round2(e.ri * 2), od: round2(e.ro * 2) };
+    notes.push({ level: 'info', key: `note.adapterEnd.${e.kind}`, vars });
   }
+  if (a.thread || b.thread) notes.push({ level: 'info', key: 'note.threadSlow' });
   const parts = [{ name: 'adapter', shape }];
   yield { label: 'stage.end2', parts };
   return { parts, notes };

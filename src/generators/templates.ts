@@ -105,5 +105,38 @@ export const ENCLOSURE_TEMPLATES: Record<string, Params> = {
   // Round sensor housing with a twist-lock lid
   round: { shape: 'round', diameter: 80, height: 40, pcb: false, lidFix: 'twist', openings: [{ type: 'gland', face: 'back', thread: 'PG7', height: 16 }], lidVent: 'holes', lidVentSize: 2.5 },
   speaker: { length: 100, width: 100, height: 50, pcb: false, lidVent: 'none', openings: [{ type: 'speaker', face: 'lid', speaker: '66' }, { type: 'usbc', face: 'back', height: 8 }] },
-  dinrail: { length: 90, width: 60, height: 40, pcbLength: 70, pcbWidth: 40, dinClip: true, lidVent: 'slots', openings: [{ type: 'rect', face: 'front', width: 30, rectHeight: 10, height: 14 }] },
+  dinrail: { length: 90, width: 60, height: 40, pcbLength: 70, pcbWidth: 40, din: 'back', lidVent: 'slots', openings: [{ type: 'rect', face: 'front', width: 30, rectHeight: 10, height: 14 }] },
+};
+
+export const ADAPTER_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  // Joins or repairs two garden hoses
+  hoseJoin: { std1: 'hose13', barbs1: true, len1: 30, std2: 'hose19', barbs2: true, len2: 30, barbCount1: 5, barbCount2: 5, transition: 8 },
+  // Screws into a 3/4" tap connector or pump and takes a 1/2" hose
+  tapToHose: { std1: 'g34m', len1: 14, std2: 'hose13', barbs2: true, len2: 30, barbCount2: 5, wall: 2.4, transition: 8 },
+  // Thread adapter, e.g. from a 1/2" tap to 3/4" garden fittings
+  threadReducer: { std1: 'g12f', len1: 14, std2: 'g34m', len2: 14, wall: 3, transition: 6 },
+  // Shop vacuum hose to a power tool port
+  vacuum: { std1: 'vac35', len1: 35, std2: 'custom', d2: 27, fit2: 'inside', barbs2: false, len2: 35, transition: 15 },
+  // Dust extraction: 100 mm duct down to a 50 mm hose
+  dust: { std1: 'dust100', len1: 40, std2: 'dust50', len2: 40, wall: 2.4, transition: 40 },
+  drainReducer: { std1: 'ht50', len1: 40, std2: 'ht40', len2: 40, wall: 2.4, transition: 10 },
+  drainElbow: { std1: 'ht40', len1: 35, std2: 'ht40', len2: 35, wall: 2.4, angle: 45, bendRadius: 45 },
+  // Duct connection screwed to a wall or panel
+  ductFlange: { std1: 'custom', d1: 100, fit1: 'inside', len1: 15, std2: 'custom', d2: 100, fit2: 'inside', barbs2: false, len2: 40, flange: 'end1', flangeDiameter: 140, flangeThickness: 3, flangeHoles: 4, transition: 0 },
+};
+
+// Drawer sizes are typical inner dimensions; furniture differs, so measure before printing.
+export const ORGANIZER_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  kitchen30: { drawerWidth: 200, drawerDepth: 470, height: 60, targetSize: 110 },
+  kitchen45: { drawerWidth: 350, drawerDepth: 470, height: 60, targetSize: 120 },
+  kitchen60: { drawerWidth: 500, drawerDepth: 470, height: 60, targetSize: 125 },
+  kitchen80: { drawerWidth: 700, drawerDepth: 470, height: 60, targetSize: 140 },
+  // Long compartments for knives, forks and spoons, short ones in front for the small stuff
+  cutlery: { drawerWidth: 500, drawerDepth: 470, height: 50, layout: 'custom', colRatios: '1, 1, 1, 1, 1.4', rowRatios: '1, 2.4', cornerRadius: 8, grip: 'none' },
+  desk: { drawerWidth: 330, drawerDepth: 400, height: 35, layout: 'custom', colRatios: '2, 1, 1', rowRatios: '1, 1, 2' },
+  workshop: { drawerWidth: 540, drawerDepth: 410, height: 45, targetSize: 90, wall: 1.6, dividersX: 1, label: true, labelDepth: 10 },
+  smallParts: { drawerWidth: 300, drawerDepth: 400, height: 30, targetSize: 60, cornerRadius: 3, dividersY: 1 },
+  bathroom: { drawerWidth: 400, drawerDepth: 350, height: 70, targetSize: 130, drain: 'holes', grip: 'frontback', cornerRadius: 10 },
 };

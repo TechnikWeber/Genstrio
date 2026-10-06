@@ -401,9 +401,49 @@ button {
   color: var(--text);
 }
 
-#reset,
-#share {
+#project {
+  flex-basis: 100%;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+#project > summary {
+  padding: 4px 0;
+  color: var(--muted);
+}
+
+.menu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.menu .row {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+}
+
+.menu .row input {
   flex: 1;
+}
+
+.menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#version {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-decoration: none;
+  text-align: right;
+}
+
+#version:hover {
+  text-decoration: underline;
 }
 
 /* --- viewer --------------------------------------------------------------- */

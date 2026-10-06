@@ -1,5 +1,6 @@
 import { BOARDS } from './boards';
-import { ENCLOSURE_TEMPLATES } from './templates';
+import { FITTINGS } from './fittings';
+import { ADAPTER_TEMPLATES, ENCLOSURE_TEMPLATES, ORGANIZER_TEMPLATES } from './templates';
 import type { FieldDef, GeneratorId, GeneratorMeta, Params } from './types';
 
 const hasPcb = (p: Params) => p.pcb === true;
@@ -99,35 +100,51 @@ export const enclosure: GeneratorMeta = {
     },
 
     ...vent('lid'),
-    ...vent('body', [{ key: 'bodyVentWalls', group: '', type: 'select', options: ['sides', 'frontback', 'all', 'floor'], default: 'sides' }]),
+    ...vent('body', [
+      { key: 'bodyVentWalls', group: '', type: 'select', options: ['none', 'sides', 'frontback', 'all'], default: 'sides' },
+      { key: 'bodyVentFloor', group: '', type: 'bool', default: false },
+    ]),
 
     { key: 'ears', group: 'mount', type: 'select', options: ['none', 'two', 'four'], default: 'none' },
     { key: 'earHole', group: 'mount', type: 'number', min: 2, max: 10, step: 0.1, default: 4.5, unit: 'mm', showIf: (p) => p.ears !== 'none' },
-    { key: 'dinClip', group: 'mount', type: 'bool', default: false },
+    { key: 'earSides', group: 'mount', type: 'select', options: ['leftright', 'frontback'], default: 'leftright', showIf: (p) => p.ears !== 'none' },
+    { key: 'earSpacing', group: 'mount', type: 'number', min: 0, max: 480, sliderMax: 200, step: 1, default: 0, unit: 'mm', showIf: (p) => p.ears === 'four' },
+    { key: 'earOffset', group: 'mount', type: 'number', min: -240, max: 240, sliderMax: 100, step: 1, default: 0, unit: 'mm', showIf: (p) => p.ears !== 'none' },
+    { key: 'din', group: 'mount', type: 'select', options: ['none', 'back', 'front', 'left', 'right', 'floor'], default: 'none' },
+    { key: 'dinOffset', group: 'mount', type: 'number', min: -240, max: 240, sliderMax: 100, step: 1, default: 0, unit: 'mm', showIf: (p) => p.din !== 'none' },
   ],
   templates: ENCLOSURE_TEMPLATES,
 };
 
 const bent = (p: Params) => (p.angle as number) > 0;
-const barbed = (p: Params) => (p.fit1 === 'inside' && p.barbs1 === true) || (p.fit2 === 'inside' && p.barbs2 === true);
 const flanged = (p: Params) => p.flange !== 'none';
+
+const STANDARDS = ['custom', ...Object.keys(FITTINGS)];
+
+/** The parameters of one adapter end. */
+const end = (n: 1 | 2, d: number, fit: string, barbs: boolean): FieldDef[] => {
+  const group = `end${n}`;
+  const custom = (p: Params) => p[`std${n}`] === 'custom';
+  const plugs = (p: Params) => (custom(p) ? p[`fit${n}`] === 'inside' : FITTINGS[p[`std${n}`] as string]?.fit === 'inside' && !FITTINGS[p[`std${n}`] as string]?.thread);
+  const barbed = (p: Params) => plugs(p) && p[`barbs${n}`] === true;
+  return [
+    { key: `std${n}`, group, type: 'select', options: STANDARDS, default: 'custom' },
+    { key: `d${n}`, group, type: 'number', min: 1, max: 1000, sliderMax: 200, step: 0.1, default: d, unit: 'mm', showIf: custom },
+    { key: `fit${n}`, group, type: 'select', options: ['inside', 'over'], default: fit, showIf: custom },
+    { key: `len${n}`, group, type: 'number', min: 1, max: 500, sliderMax: 100, step: 1, default: 25, unit: 'mm' },
+    { key: `barbs${n}`, group, type: 'bool', default: barbs, showIf: plugs },
+    { key: `barbCount${n}`, group, type: 'number', min: 1, max: 12, step: 1, default: 4, showIf: barbed },
+    { key: `barbHeight${n}`, group, type: 'number', min: 0.2, max: 5, sliderMax: 2, step: 0.1, default: 0.8, unit: 'mm', showIf: barbed },
+    { key: `barbPitch${n}`, group, type: 'number', min: 1.5, max: 20, sliderMax: 10, step: 0.5, default: 4, unit: 'mm', showIf: barbed },
+  ];
+};
 
 export const adapter: GeneratorMeta = {
   id: 'adapter',
+  templates: ADAPTER_TEMPLATES,
   params: [
-    { key: 'd1', group: 'end1', type: 'number', min: 1, max: 1000, sliderMax: 200, step: 0.1, default: 32, unit: 'mm' },
-    { key: 'fit1', group: 'end1', type: 'select', options: ['inside', 'over'], default: 'over' },
-    { key: 'len1', group: 'end1', type: 'number', min: 1, max: 500, sliderMax: 100, step: 1, default: 25, unit: 'mm' },
-    { key: 'barbs1', group: 'end1', type: 'bool', default: false, showIf: (p) => p.fit1 === 'inside' },
-
-    { key: 'd2', group: 'end2', type: 'number', min: 1, max: 1000, sliderMax: 200, step: 0.1, default: 40, unit: 'mm' },
-    { key: 'fit2', group: 'end2', type: 'select', options: ['inside', 'over'], default: 'inside' },
-    { key: 'len2', group: 'end2', type: 'number', min: 1, max: 500, sliderMax: 100, step: 1, default: 25, unit: 'mm' },
-    { key: 'barbs2', group: 'end2', type: 'bool', default: true, showIf: (p) => p.fit2 === 'inside' },
-
-    { key: 'barbCount', group: 'barbs', type: 'number', min: 1, max: 12, step: 1, default: 4, showIf: barbed },
-    { key: 'barbHeight', group: 'barbs', type: 'number', min: 0.2, max: 5, sliderMax: 2, step: 0.1, default: 0.8, unit: 'mm', showIf: barbed },
-    { key: 'barbPitch', group: 'barbs', type: 'number', min: 1.5, max: 20, sliderMax: 10, step: 0.5, default: 4, unit: 'mm', showIf: barbed },
+    ...end(1, 32, 'over', false),
+    ...end(2, 40, 'inside', true),
 
     { key: 'wall', group: 'body', type: 'number', min: 0.4, max: 50, sliderMax: 10, step: 0.1, default: 2, unit: 'mm' },
     { key: 'transition', group: 'body', type: 'number', min: 0, max: 500, sliderMax: 100, step: 1, default: 10, unit: 'mm' },
@@ -150,6 +167,7 @@ const RATIOS = '^\\s*\\d+(\\.\\d+)?(\\s*[,; ]\\s*\\d+(\\.\\d+)?){0,11}\\s*$';
 
 export const organizer: GeneratorMeta = {
   id: 'organizer',
+  templates: ORGANIZER_TEMPLATES,
   params: [
     { key: 'drawerWidth', group: 'drawer', type: 'number', min: 30, max: 1200, step: 1, default: 287, unit: 'mm' },
     { key: 'drawerDepth', group: 'drawer', type: 'number', min: 30, max: 1200, step: 1, default: 410, unit: 'mm' },
