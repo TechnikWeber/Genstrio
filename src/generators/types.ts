@@ -21,6 +21,8 @@ export interface NumberParam extends ParamBase {
   unit?: string;
   /** Upper end of the slider when `max` is far beyond everyday values. */
   sliderMax?: number;
+  /** A value the user rolls instead of setting: a button for a new random one replaces the slider. */
+  dice?: boolean;
 }
 
 export interface BoolParam extends ParamBase {

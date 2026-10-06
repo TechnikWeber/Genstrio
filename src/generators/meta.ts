@@ -162,6 +162,7 @@ export const adapter: GeneratorMeta = {
 };
 
 const manual = (p: Params) => p.layout === 'manual';
+const sized = (p: Params) => p.layout === 'auto' || p.layout === 'random';
 // One to twelve positive numbers, separated by commas or spaces
 const RATIOS = '^\\s*\\d+(\\.\\d+)?(\\s*[,; ]\\s*\\d+(\\.\\d+)?){0,11}\\s*$';
 
@@ -173,9 +174,11 @@ export const organizer: GeneratorMeta = {
     { key: 'drawerDepth', group: 'drawer', type: 'number', min: 30, max: 1200, step: 1, default: 410, unit: 'mm' },
     { key: 'height', group: 'drawer', type: 'number', min: 5, max: 250, step: 1, default: 40, unit: 'mm' },
 
-    { key: 'layout', group: 'grid', type: 'select', options: ['auto', 'manual', 'custom'], default: 'auto' },
-    { key: 'targetSize', group: 'grid', type: 'number', min: 20, max: 400, step: 1, default: 100, unit: 'mm', showIf: (p) => p.layout === 'auto' },
-    { key: 'maxPrint', group: 'grid', type: 'number', min: 80, max: 600, step: 1, default: 220, unit: 'mm', showIf: (p) => p.layout === 'auto' },
+    { key: 'layout', group: 'grid', type: 'select', options: ['auto', 'manual', 'custom', 'random'], default: 'auto' },
+    { key: 'targetSize', group: 'grid', type: 'number', min: 20, max: 400, step: 1, default: 100, unit: 'mm', showIf: sized },
+    { key: 'maxPrint', group: 'grid', type: 'number', min: 80, max: 600, step: 1, default: 220, unit: 'mm', showIf: sized },
+    { key: 'mix', group: 'grid', type: 'number', min: 10, max: 90, step: 5, default: 50, unit: '%', showIf: (p) => p.layout === 'random' },
+    { key: 'seed', group: 'grid', type: 'number', min: 1, max: 9999, step: 1, default: 1, dice: true, showIf: (p) => p.layout === 'random' },
     { key: 'colRatios', group: 'grid', type: 'text', default: '2, 1, 1', pattern: RATIOS, showIf: (p) => p.layout === 'custom' },
     { key: 'rowRatios', group: 'grid', type: 'text', default: '1, 1, 2', pattern: RATIOS, showIf: (p) => p.layout === 'custom' },
     { key: 'columns', group: 'grid', type: 'number', min: 1, max: 20, step: 1, default: 3, showIf: manual },

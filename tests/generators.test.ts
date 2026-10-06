@@ -483,6 +483,22 @@ describe('organizer', () => {
     expect(Math.max(...xs)).toBeCloseTo(287 / 2 - 287 / 8, 1);
   });
 
+  it('rolls a random mix of box sizes that fills the drawer', () => {
+    const roll = (seed: number) => run('organizer', { layout: 'random', seed, drawerWidth: 400, drawerDepth: 400, targetSize: 100 }).result;
+    const result = roll(3);
+    expect(warnings(result)).toEqual([]);
+    expect(result.parts.length).toBeGreaterThan(1);
+    expect(result.parts.length).toBeLessThanOrEqual(4);
+    // Footprints, play included, add up to the drawer
+    const area = result.parts.reduce((sum, part) => sum + part.instances!.length * (size(part.shape)[0] + 0.5) * (size(part.shape)[1] + 0.5), 0);
+    expect(area).toBeCloseTo(400 * 400, 0);
+    for (const part of result.parts) expect(Math.max(...size(part.shape))).toBeLessThanOrEqual(220);
+    // The same number gives the same arrangement, another number a different one
+    const layout = (r: BuildResult) => JSON.stringify(r.parts.map((part) => [part.name, part.instances]));
+    expect(layout(roll(3))).toBe(layout(result));
+    expect(layout(roll(4))).not.toBe(layout(result));
+  });
+
   it('builds every organizer template cleanly', () => {
     for (const name of Object.keys(GENERATORS.organizer.templates!)) {
       const { result } = run('organizer', fromTemplate(GENERATORS.organizer, name));

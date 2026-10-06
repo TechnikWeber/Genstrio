@@ -18,6 +18,7 @@
             <h1>Genstrio</h1>
             <p id="tagline"></p>
           </div>
+          <select id="unit"></select>
           <button id="lang" type="button" class="ghost"></button>
         </header>
         <nav id="tools"></nav>
@@ -58,7 +59,10 @@
           </span>
         </div>
         <div class="overlay bottom">
-          <ul id="notes"></ul>
+          <details id="notes-box" hidden>
+            <summary id="notes-label"></summary>
+            <ul id="notes"></ul>
+          </details>
           <p id="hint"></p>
         </div>
       </main>

@@ -6,11 +6,14 @@ export interface OrganizerParams {
   drawerWidth: number;
   drawerDepth: number;
   height: number;
-  layout: 'auto' | 'manual' | 'custom';
+  layout: 'auto' | 'manual' | 'custom' | 'random';
   colRatios: string;
   rowRatios: string;
   targetSize: number;
   maxPrint: number;
+  /** Random layout: share of large boxes in percent, and the number of the arrangement. */
+  mix: number;
+  seed: number;
   columns: number;
   rows: number;
   gap: number;
@@ -49,6 +52,64 @@ function split(span: number, p: OrganizerParams, manual: number, ratios: string)
   return list.map((v) => (span * v) / sum);
 }
 
+/** The place of one box in the drawer: centre and footprint, play included. */
+interface Slot {
+  x: number;
+  y: number;
+  w: number;
+  d: number;
+}
+
+/** Small seeded random generator (mulberry32), so an arrangement can be shared and rebuilt. */
+function random(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), a | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * A random mix of small and large boxes: the drawer is divided into equal
+ * cells, and some neighbours are merged into boxes two cells wide, deep or
+ * both. That leaves at most four sizes to print, and boxes can still be
+ * swapped around in the drawer.
+ */
+function randomSlots(p: OrganizerParams): Slot[] {
+  const nx = cells(p.drawerWidth, p, 0);
+  const ny = cells(p.drawerDepth, p, 0);
+  const cw = p.drawerWidth / nx;
+  const cd = p.drawerDepth / ny;
+  const rand = random(Math.round(p.seed));
+  const spans: [number, number][] = [[2, 2], [2, 1], [1, 2]];
+  let slots: Slot[] = [];
+  // Roll again if every box came out the same size, as long as a mix is possible at all.
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const used = new Set<number>();
+    const fits = (i: number, j: number, [si, sj]: [number, number]) => {
+      if (i + si > nx || j + sj > ny || si * cw - p.gap > p.maxPrint || sj * cd - p.gap > p.maxPrint) return false;
+      for (let a = i; a < i + si; a++) for (let b = j; b < j + sj; b++) if (used.has(b * nx + a)) return false;
+      return true;
+    };
+    slots = [];
+    const sizes = new Set<string>();
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        if (used.has(j * nx + i)) continue;
+        const large = rand() < p.mix / 100 ? spans.filter((span) => fits(i, j, span)) : [];
+        const [si, sj] = large.length ? large[Math.floor(rand() * large.length)] : [1, 1];
+        for (let a = i; a < i + si; a++) for (let b = j; b < j + sj; b++) used.add(b * nx + a);
+        slots.push({ x: -p.drawerWidth / 2 + (i + si / 2) * cw, y: -p.drawerDepth / 2 + (j + sj / 2) * cd, w: si * cw, d: sj * cd });
+        sizes.add(`${si}x${sj}`);
+      }
+    }
+    if (sizes.size > 1) break;
+  }
+  return slots;
+}
+
 export function* buildOrganizer(p: OrganizerParams): Build {
   const notes: Note[] = [];
   const warn = (key: string) => {
@@ -56,10 +117,24 @@ export function* buildOrganizer(p: OrganizerParams): Build {
   };
   const cols = split(p.drawerWidth, p, p.columns, p.colRatios);
   const rows = split(p.drawerDepth, p, p.rows, p.rowRatios);
+  let slots: Slot[];
+  if (p.layout === 'random') slots = randomSlots(p);
+  else {
+    slots = [];
+    let x = -p.drawerWidth / 2;
+    for (const w of cols) {
+      let y = -p.drawerDepth / 2;
+      for (const d of rows) {
+        slots.push({ x: x + w / 2, y: y + d / 2, w, d });
+        y += d;
+      }
+      x += w;
+    }
+  }
   const t = p.wall;
   const h = p.height;
   const floor = Math.min(p.floor, h - 1);
-  if (Math.min(...cols, ...rows) - p.gap < 2 * t + 4) throw new ParamError('err.boxTooSmall');
+  if (Math.min(...slots.flatMap((s) => [s.w, s.d])) - p.gap < 2 * t + 4) throw new ParamError('err.boxTooSmall');
 
   /** One box of the given footprint, centred on the origin; yields its bare outer body first. */
   function* makeBox(bw: number, bd: number): Generator<Shape3D, Shape3D, void> {
@@ -121,16 +196,10 @@ export function* buildOrganizer(p: OrganizerParams): Build {
 
   // Group the cells by footprint: every distinct size is built and exported once.
   const kinds = new Map<string, { bw: number; bd: number; at: Vec3[] }>();
-  let x = -p.drawerWidth / 2;
-  for (const cw of cols) {
-    let y = -p.drawerDepth / 2;
-    for (const cd of rows) {
-      const key = `${cw.toFixed(2)}x${cd.toFixed(2)}`;
-      if (!kinds.has(key)) kinds.set(key, { bw: cw - p.gap, bd: cd - p.gap, at: [] });
-      kinds.get(key)!.at.push([x + cw / 2, y + cd / 2, 0]);
-      y += cd;
-    }
-    x += cw;
+  for (const slot of slots) {
+    const key = `${slot.w.toFixed(2)}x${slot.d.toFixed(2)}`;
+    if (!kinds.has(key)) kinds.set(key, { bw: slot.w - p.gap, bd: slot.d - p.gap, at: [] });
+    kinds.get(key)!.at.push([slot.x, slot.y, 0]);
   }
 
   const parts: Part[] = [];
@@ -152,10 +221,12 @@ export function* buildOrganizer(p: OrganizerParams): Build {
 
   if (kinds.size === 1) {
     const [kind] = kinds.values();
-    notes.unshift({ level: 'info', key: 'note.organizerGrid', vars: { nx: cols.length, ny: rows.length, n: kind.at.length, w: round1(kind.bw), d: round1(kind.bd) } });
-    if (p.layout === 'auto' && Math.max(kind.bw, kind.bd) > p.maxPrint) notes.push({ level: 'warn', key: 'note.boxExceedsBed', vars: { bed: p.maxPrint } });
+    const nx = Math.round(p.drawerWidth / (kind.bw + p.gap));
+    notes.unshift({ level: 'info', key: 'note.organizerGrid', vars: { nx, ny: kind.at.length / nx, n: kind.at.length, w: round1(kind.bw), d: round1(kind.bd) } });
   } else {
-    notes.unshift({ level: 'info', key: 'note.organizerMixed', vars: { n: cols.length * rows.length, kinds: kinds.size } });
+    notes.unshift({ level: 'info', key: 'note.organizerMixed', vars: { n: slots.length, kinds: kinds.size } });
   }
+  const largest = Math.max(...[...kinds.values()].flatMap((kind) => [kind.bw, kind.bd]));
+  if ((p.layout === 'auto' || p.layout === 'random') && largest > p.maxPrint) notes.push({ level: 'warn', key: 'note.boxExceedsBed', vars: { bed: p.maxPrint } });
   return { parts, notes, frame: [p.drawerWidth, p.drawerDepth] };
 }

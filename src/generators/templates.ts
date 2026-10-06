@@ -135,6 +135,7 @@ export const ORGANIZER_TEMPLATES: Record<string, Params> = {
   kitchen80: { drawerWidth: 700, drawerDepth: 470, height: 60, targetSize: 140 },
   // Long compartments for knives, forks and spoons, short ones in front for the small stuff
   cutlery: { drawerWidth: 500, drawerDepth: 470, height: 50, layout: 'custom', colRatios: '1, 1, 1, 1, 1.4', rowRatios: '1, 2.4', cornerRadius: 8, grip: 'none' },
+  mixed: { drawerWidth: 400, drawerDepth: 450, height: 45, layout: 'random', targetSize: 90, seed: 7 },
   desk: { drawerWidth: 330, drawerDepth: 400, height: 35, layout: 'custom', colRatios: '2, 1, 1', rowRatios: '1, 1, 2' },
   workshop: { drawerWidth: 540, drawerDepth: 410, height: 45, targetSize: 90, wall: 1.6, dividersX: 1, label: true, labelDepth: 10 },
   smallParts: { drawerWidth: 300, drawerDepth: 400, height: 30, targetSize: 60, cornerRadius: 3, dividersY: 1 },

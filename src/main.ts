@@ -3,6 +3,7 @@ import type { ExportFormat, Request, Response } from './engine/protocol';
 import { GENERATOR_IDS, GENERATORS } from './generators/meta';
 import { defaults, fromTemplate, newItem, sanitize, type FieldDef, type GeneratorId, type ListParam, type Note, type Params, type Value } from './generators/types';
 import { getLang, setLang, t, type Lang } from './i18n';
+import { fromUnit, getUnit, setUnit, toUnit, unitStep, UNITS, type Unit } from './units';
 import { Viewer } from './viewer';
 
 declare const __APP_VERSION__: string;
@@ -25,6 +26,9 @@ const ICONS: Record<GeneratorId, string> = {
 interface Saved {
   generator?: GeneratorId;
   lang?: Lang;
+  unit?: Unit;
+  /** Whether the notes over the preview are unfolded; unset until the user toggles them. */
+  notesOpen?: boolean;
   params?: Partial<Record<GeneratorId, Record<string, unknown>>>;
   /** Which parameter groups are unfolded, by `generator.group`. */
   open?: Record<string, boolean>;
@@ -65,6 +69,9 @@ function shareLink(): string {
 let langChosen = saved.lang === 'de' || saved.lang === 'en';
 setLang(langChosen ? (saved.lang as Lang) : getLang());
 
+if (UNITS.includes(saved.unit as Unit)) setUnit(saved.unit as Unit);
+let notesOpen = saved.notesOpen;
+
 let current: GeneratorId = GENERATOR_IDS.includes(saved.generator as GeneratorId) ? (saved.generator as GeneratorId) : 'enclosure';
 const params = Object.fromEntries(
   GENERATOR_IDS.map((id) => [id, sanitize(GENERATORS[id], { ...defaults(GENERATORS[id]), ...saved.params?.[id] })]),
@@ -72,7 +79,7 @@ const params = Object.fromEntries(
 
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, params, open: openGroups, templates: userTemplates }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, unit: getUnit(), notesOpen, params, open: openGroups, templates: userTemplates }));
   } catch {
     // Private mode or blocked storage: the app works without persistence.
   }
@@ -91,6 +98,8 @@ const viewer = new Viewer($('#viewer'));
 const form = $<HTMLFormElement>('#params');
 const statusEl = $('#status');
 const notesEl = $('#notes');
+const notesBox = $<HTMLDetailsElement>('#notes-box');
+const unitEl = $<HTMLSelectElement>('#unit');
 const toolsEl = $('#tools');
 const exportEl = $('#export');
 const templateEl = $<HTMLSelectElement>('#template');
@@ -127,12 +136,24 @@ function renderStatus() {
   statusEl.classList.toggle('busy', busy);
 }
 
+// On a narrow screen the notes would cover much of the preview, so they start folded there.
+const narrow = matchMedia('(max-width: 760px)');
+
 function renderNotes() {
-  notesEl.replaceChildren(
+  const items = [
     ...(lastNotes.error ? [el('li', { className: 'error', textContent: t(lastNotes.error) })] : []),
     ...lastNotes.notes.map((n) => el('li', { className: n.level, textContent: t(n.key, n.vars) })),
-  );
+  ];
+  notesEl.replaceChildren(...items);
+  notesBox.hidden = !items.length;
+  notesBox.open = notesOpen ?? !narrow.matches;
+  notesBox.className = lastNotes.error ? 'error' : lastNotes.notes.some((n) => n.level === 'warn') ? 'warn' : '';
+  $('#notes-label').textContent = t('app.notes', { n: items.length });
 }
+$('#notes-label').addEventListener('click', () => {
+  notesOpen = !notesBox.open;
+  save();
+});
 
 function rebuild() {
   buildId = ++requestId;
@@ -244,24 +265,37 @@ function field(def: FieldDef, values: Params, id: string, key: string): HTMLElem
     row.append(el('label', { htmlFor: id, textContent: label }), input);
   } else {
     const range = el('input', { type: 'range', min: String(def.min), max: String(def.sliderMax ?? def.max), step: String(def.step), tabIndex: -1 });
-    const number = el('input', { type: 'number', id, min: String(def.min), max: String(def.max), step: String(def.step) });
-    range.value = number.value = String(values[def.key]);
+    // Lengths are kept in mm and shown in the chosen unit.
+    const length = def.unit === 'mm';
+    const shown = (v: number) => String(length ? toUnit(v) : v);
+    const number = el('input', { type: 'number', id, step: String(length ? unitStep(def.step) : def.step) });
+    // In inches the limits are odd numbers the arrow keys would step from, so they are only enforced below.
+    if (!length || getUnit() !== 'in') Object.assign(number, { min: shown(def.min), max: shown(def.max) });
+    range.value = String(values[def.key]);
+    number.value = shown(values[def.key] as number);
     range.setAttribute('aria-hidden', 'true');
     range.addEventListener('input', () => {
-      number.value = range.value;
+      number.value = shown(range.valueAsNumber);
       update(range.valueAsNumber);
     });
     number.addEventListener('input', () => {
       if (!Number.isFinite(number.valueAsNumber)) return;
-      const v = Math.min(def.max, Math.max(def.min, number.valueAsNumber));
+      const v = Math.min(def.max, Math.max(def.min, length ? fromUnit(number.valueAsNumber) : number.valueAsNumber));
       range.value = String(v);
       update(v);
     });
-    number.addEventListener('blur', () => (number.value = String(values[def.key])));
+    number.addEventListener('blur', () => (number.value = shown(values[def.key] as number)));
+    const dice = el('button', { type: 'button', className: 'ghost dice', textContent: t('app.reroll') });
+    dice.addEventListener('click', () => {
+      let v = values[def.key] as number;
+      while (v === values[def.key]) v = def.min + Math.floor(Math.random() * (def.max - def.min + 1));
+      number.value = String(v);
+      update(v);
+    });
     row.append(
       el('label', { htmlFor: id, textContent: label }),
-      el('span', { className: 'num' }, [number, el('span', { className: 'unit', textContent: def.unit ?? '' })]),
-      range,
+      el('span', { className: 'num' }, [number, el('span', { className: 'unit', textContent: length ? getUnit() : (def.unit ?? '') })]),
+      def.dice ? dice : range,
     );
   }
   return row;
@@ -397,6 +431,8 @@ function renderChrome() {
   partNames = '';
   renderTemplates();
   $('#lang').textContent = getLang() === 'de' ? 'EN' : 'DE';
+  unitEl.setAttribute('aria-label', t('app.unit'));
+  unitEl.title = t('app.unit');
   toolsEl.setAttribute('aria-label', t('app.tools'));
 
   toolsEl.replaceChildren(
@@ -503,6 +539,15 @@ $('#reset').addEventListener('click', () => {
   fitPending = true;
   renderForm();
   scheduleRebuild();
+});
+unitEl.append(...UNITS.map((unit) => el('option', { value: unit, textContent: unit === 'in' ? 'inch' : unit })));
+unitEl.value = getUnit();
+unitEl.addEventListener('change', () => {
+  setUnit(unitEl.value as Unit);
+  save();
+  renderForm();
+  renderNotes();
+  renderStatus();
 });
 $('#lang').addEventListener('click', () => {
   setLang(getLang() === 'de' ? 'en' : 'de');

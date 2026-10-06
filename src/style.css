@@ -197,6 +197,18 @@ details[open] {
   flex-basis: 100%;
 }
 
+#unit {
+  width: auto;
+  padding: 4px 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: transparent;
+}
+
+.dice {
+  grid-column: 1 / -1;
+}
+
 .field.text {
   grid-template-columns: 1fr;
 }
@@ -529,6 +541,41 @@ main {
   background: var(--panel);
 }
 
+#notes-box {
+  max-width: min(100%, 560px);
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+#notes-box > summary {
+  display: inline-flex;
+  gap: 10px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 6px;
+}
+
+#notes-box[open] > summary {
+  margin-bottom: 4px;
+}
+
+#notes-box.warn > summary {
+  border-left-color: var(--warn);
+  color: var(--warn);
+}
+
+#notes-box.error > summary {
+  border-left-color: var(--error);
+  color: var(--error);
+}
+
 #notes {
   margin: 0;
   padding: 0;
@@ -536,7 +583,8 @@ main {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: min(100%, 560px);
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 #notes li {
@@ -585,5 +633,9 @@ main {
 
   #hint {
     display: none;
+  }
+
+  #notes {
+    max-height: 24vh;
   }
 }

@@ -1,8 +1,17 @@
+import { getUnit, toUnit } from './units';
+
 export type Lang = 'de' | 'en';
 
 type Dict = Record<string, string>;
 
 const de: Dict = {
+  'app.notes': 'Hinweise ({n})',
+  'app.unit': 'Maßeinheit',
+  'app.reroll': 'Neu würfeln',
+  'organizer.o.layout.random': 'Zufällig gemischt (kleine und große Boxen)',
+  'organizer.p.seed': 'Anordnung Nr.',
+  'organizer.p.mix': 'Anteil großer Boxen',
+  'organizer.template.mixed': 'Bunt gemischt (zufällige Anordnung)',
   'note.threadSlow': 'Gewinde brauchen beim Berechnen einige Sekunden. Mit feiner Schichthöhe drucken.',
   'app.templatesMine': 'Meine Vorlagen',
   'app.templatesBuiltIn': 'Mitgelieferte Vorlagen',
@@ -455,6 +464,13 @@ const de: Dict = {
 };
 
 const en: Dict = {
+  'app.notes': 'Notes ({n})',
+  'app.unit': 'Unit of length',
+  'app.reroll': 'Roll again',
+  'organizer.o.layout.random': 'Random mix (small and large boxes)',
+  'organizer.p.seed': 'Arrangement no.',
+  'organizer.p.mix': 'Share of large boxes',
+  'organizer.template.mixed': 'Mixed sizes (random arrangement)',
   'note.threadSlow': 'Threads take a few seconds to compute. Print them with a fine layer height.',
   'app.templatesMine': 'My templates',
   'app.templatesBuiltIn': 'Built-in templates',
@@ -916,10 +932,24 @@ export const setLang = (next: Lang) => {
   document.documentElement.lang = next;
 };
 
+// "{l} × {w} × {h} mm" or "{d} mm" in a text: lengths, shown in the chosen unit.
+const LENGTHS = /((?:\{\w+\}\s*×\s*)*\{\w+\})(\s*)mm\b/g;
+
 export function t(key: string, vars: Record<string, string | number> = {}): string {
-  const text = DICTS[lang][key] ?? DICTS.en[key] ?? key;
+  let text = DICTS[lang][key] ?? DICTS.en[key] ?? key;
+  const lengths = new Set<string>();
+  const unit = getUnit();
+  if (unit !== 'mm') {
+    text = text.replace(LENGTHS, (all, chain: string, space: string) => {
+      const names = [...chain.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+      if (!names.every((name) => typeof vars[name] === 'number')) return all;
+      for (const name of names) lengths.add(name);
+      return chain + space + unit;
+    });
+  }
   return text.replace(/\{(\w+)\}/g, (_, name) => {
     const v = vars[name];
-    return typeof v === 'number' ? v.toLocaleString(lang) : String(v ?? '');
+    if (typeof v !== 'number') return String(v ?? '');
+    return (lengths.has(name) ? toUnit(v) : v).toLocaleString(lang);
   });
 }
