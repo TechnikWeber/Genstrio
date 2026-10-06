@@ -22,20 +22,26 @@
         </header>
         <nav id="tools"></nav>
         <p id="desc"></p>
+        <select id="template"></select>
         <form id="params" autocomplete="off" onsubmit="return false"></form>
         <footer>
           <span id="export-label"></span>
           <div id="export"></div>
+          <select id="only"></select>
           <button id="reset" type="button" class="ghost"></button>
+          <button id="share" type="button" class="ghost"></button>
         </footer>
       </aside>
       <main>
         <div id="viewer"></div>
         <div class="overlay top">
           <p id="status" role="status" class="busy"></p>
-          <button id="fit" type="button" class="ghost">
-            <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
-          </button>
+          <span class="view-tools">
+            <button id="assembled" type="button" class="ghost" aria-pressed="false" hidden></button>
+            <button id="fit" type="button" class="ghost">
+              <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+            </button>
+          </span>
         </div>
         <div class="overlay bottom">
           <ul id="notes"></ul>

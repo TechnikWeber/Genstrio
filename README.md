@@ -14,9 +14,9 @@ The interface is in English; the **DE** button in the header switches to German.
 
 | Generator | What it makes |
 | --- | --- |
-| **Electronics enclosure** | Rectangular, round or polygonal (3–12 sides) box with lid. PCB standoffs and lid screws are sized independently (M2–M5), each as self-tapping pilot hole or heat-set insert hole; lid screws can be countersunk or counterbored. Alternatively the lid snaps on or is a plain push fit. Any number of openings on walls, lid or floor: connectors (USB-C, Micro-USB, USB-A, HDMI, RJ45), round holes with presets for antennas, LEDs, switches and buttons, cable glands (M12–M40, PG7–PG21, optionally with printed thread), speakers (20–77 mm, grille or open, with locating ring), fans (25–80 mm) and free rectangles. Ventilation is set separately for lid and body: slots, round holes, honeycomb, triangles or a square grid. Optional mounting ears. The lid is laid out next to the body, ready to print. |
-| **Pipe adapter** | Reducer between two pipes or hoses. Each end either plugs into its counterpart or slides over it; the diameter you enter always stays the mating surface, the wall grows away from it. Optional hose barbs, lead-in chamfers, a printable transition cone, and an optional elbow of up to 180°. |
-| **Drawer organizer** | Splits a drawer into a grid of equal boxes that fill it without gaps and fit your print bed. Each box can have dividers (full or reduced height), finger notches in the rim, drain openings in the floor and a label ledge. |
+| **Electronics enclosure** | Rectangular, round or polygonal (3–12 sides) box, with or without lid. **Templates** for Raspberry Pi 3/4/5, Zero and Pico, Arduino Uno and Mega, Adafruit Feather, ESP32 DevKit and BeagleBone place the standoffs on the board's hole pattern and cut the openings for its connectors; every value stays editable. PCB standoffs and lid screws are sized independently (M2–M5), as self-tapping pilot holes or heat-set insert holes; lid screws can be countersunk or counterbored. The lid can instead snap on, twist-lock (round bodies), or just push on, and can be hinged with a pin hinge. Optional gasket groove, mounting ears and a DIN rail clip. Any number of openings on walls, lid or floor: connectors (USB-C, Micro-USB, USB-A single and stacked, USB-B, HDMI, Mini/Micro-HDMI, RJ45, DC jack, SD slot), round holes with presets for antennas, LEDs, switches and buttons, cable glands (M12–M40, PG7–PG21, optionally with printed thread), speakers (20–77 mm) and fans (25–120 mm) behind a guard of holes, honeycomb, grid, slots or triangles, or fully open. Ventilation is set separately for lid and body. |
+| **Pipe adapter** | Reducer between two pipes or hoses. Each end either plugs into its counterpart or slides over it; the diameter you enter always stays the mating surface, the wall grows away from it. Hose barbs with adjustable count, height and spacing, lead-in chamfers, a printable transition cone, an optional elbow of up to 180° and an optional mounting flange with bolt holes. |
+| **Drawer organizer** | Splits a drawer into boxes that fill it without gaps and fit your print bed: equal boxes, or mixed sizes from ratios you type in (e.g. `2, 1, 1`). Each box can have dividers (full or reduced height), finger notches in the rim, drain openings in the floor and a label ledge. |
 
 More generators are planned, see [Roadmap](#roadmap).
 
@@ -60,7 +60,9 @@ Set `GENSTRIO_PORT` to use a port other than 4173.
 - **3MF** contains each part as a separate object.
 - **STEP** contains the exact CAD geometry, for further editing in FreeCAD, Fusion and the like.
 
-All files are in millimetres. The drawer organizer exports a single box; the app tells you how many to print.
+All files are in millimetres. If a model has several parts, the selector below the export buttons lets you download just one of them, for example only the lid. The drawer organizer exports each box size once; the app tells you how many to print.
+
+**Copy link** puts the current generator and all its values into a link you can bookmark or share. **Assembled** in the preview shows the lid in place on the body.
 
 ## Development
 
@@ -79,14 +81,15 @@ How the code is organised:
 - `src/engine/worker.ts` runs the CAD kernel in a web worker, so the interface stays responsive.
 - `src/viewer.ts` is the three.js preview, `src/i18n.ts` holds the English and German texts.
 
+Board hole patterns live in `src/generators/boards.ts`, templates in `src/generators/templates.ts`.
+
 To add a generator, declare its parameters in `meta.ts`, write a build function, register it in `build/index.ts`, and add its texts to `i18n.ts`.
 
 ## Roadmap
 
-- Presets for common boards (Arduino, ESP32, Raspberry Pi) and DIN-rail enclosures
-- Twist-lock lids for round enclosures, gasket grooves, hinged lids
-- Organizer boxes of mixed sizes
-- More fittings: flanges, pipe clamps, cable glands
+- More board templates, including the connector cutouts of BeagleBone and other single-board computers
+- Print-in-place hinges and latches
+- More fittings: pipe clamps, T-pieces, hose couplings
 - Further generators: gears, text and QR codes in 3D, logo reliefs, cookie cutters
 
 ## License

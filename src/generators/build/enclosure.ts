@@ -1,4 +1,5 @@
 import { draw, drawCircle, drawPolysides, makeCylinder, type Drawing, type Shape3D, type Sketch } from 'replicad';
+import { BOARDS } from '../boards';
 import type { Note } from '../types';
 import { cutAll, fuseAll, patternCells, prism, revolveZ, round1, roundedRect, type Build, type Part, type Pattern } from './common';
 
@@ -7,7 +8,7 @@ type Vent = 'none' | Pattern;
 type ScrewSize = keyof typeof SCREWS;
 
 export interface Opening {
-  type: 'round' | 'gland' | 'usbc' | 'microusb' | 'usba' | 'hdmi' | 'rj45' | 'rect' | 'speaker' | 'fan';
+  type: 'round' | 'gland' | 'rect' | 'speaker' | 'fan' | keyof typeof CONNECTORS;
   face: Side | 'lid' | 'floor';
   preset: 'custom' | keyof typeof ROUND_PRESETS;
   diameter: number;
@@ -17,7 +18,7 @@ export interface Opening {
   rectHeight: number;
   radius: number;
   speaker: string;
-  speakerStyle: 'grille' | 'open';
+  grille: Pattern | 'open';
   ring: boolean;
   fan: keyof typeof FANS;
   /** Along the wall, to the right when seen from outside; X on lid and floor. */
@@ -37,6 +38,7 @@ export interface EnclosureParams {
   wall: number;
   cornerRadius: number;
   pcb: boolean;
+  pcbBoard: string;
   pcbLength: number;
   pcbWidth: number;
   holeInset: number;
@@ -45,7 +47,8 @@ export interface EnclosureParams {
   pcbOffsetY: number;
   pcbScrew: ScrewSize;
   pcbHole: 'selftap' | 'insert';
-  lidFix: 'screws' | 'snap' | 'none';
+  lid: boolean;
+  lidFix: 'screws' | 'snap' | 'twist' | 'none';
   lidScrew: ScrewSize;
   lidHole: 'selftap' | 'insert';
   lidHead: 'flat' | 'countersunk' | 'counterbore';
@@ -54,6 +57,12 @@ export interface EnclosureParams {
   snapHeight: number;
   lidThickness: number;
   clearance: number;
+  hinge: boolean;
+  hingeCount: number;
+  hingeWidth: number;
+  hingePin: number;
+  gasket: boolean;
+  gasketWidth: number;
   openings: Opening[];
   lidVent: Vent;
   lidVentSize: number;
@@ -68,6 +77,7 @@ export interface EnclosureParams {
   bodyVentArea: number;
   ears: 'none' | 'two' | 'four';
   earHole: number;
+  dinClip: boolean;
 }
 
 // d: nominal, pilot: self-tapping core hole, clear: through hole,
@@ -86,8 +96,14 @@ const CONNECTORS = {
   usbc: [9.4, 3.6, 1.7],
   microusb: [8.2, 3.4, 1],
   usba: [13.6, 6.2, 0.6],
+  usba2: [15.4, 16.6, 0.6], // two USB-A stacked
+  usbb: [12.6, 11.6, 0.6],
   hdmi: [15.6, 6.2, 0.8],
+  minihdmi: [11.6, 4.6, 1],
+  microhdmi: [7.6, 4.2, 1],
   rj45: [16.4, 14, 0.6],
+  barrel: [9.6, 11.4, 0.6], // PCB-mount DC jack
+  sd: [13, 3, 0.5],
 };
 
 // Panel hole Ø of common round parts
@@ -123,7 +139,7 @@ const THREADS = {
 };
 
 // Fan size → screw hole spacing
-const FANS = { '25': 20, '30': 24, '40': 32, '50': 40, '60': 50, '80': 71.5 };
+const FANS = { '25': 20, '30': 24, '40': 32, '50': 40, '60': 50, '70': 61.5, '80': 71.5, '92': 82.5, '120': 105 };
 
 const THREAD_LENGTH = 6;
 const O: [number, number, number] = [0, 0, 0];
@@ -268,6 +284,15 @@ interface Rect {
 
 const overlaps = (a: Rect, b: Rect) => Math.abs(a.x - b.x) < a.hw + b.hw && Math.abs(a.y - b.y) < a.hh + b.hh;
 
+/** A round opening of the given radius: fully open, or a guard of small openings. */
+function grille(kind: Pattern | 'open', radius: number): Drawing[] {
+  if (kind === 'open') return [drawCircle(radius)];
+  const size = Math.min(7, Math.max(2, radius / 6));
+  const fits = (x: number, y: number, hw: number, hh: number) => Math.hypot(Math.abs(x) + hw, Math.abs(y) + hh) <= radius;
+  const { cells } = patternCells(kind, kind === 'slots' ? size * 0.7 : size, Math.max(1.2, size * 0.35), radius * 0.8, 2 * radius, 2 * radius, fits);
+  return cells.map((c) => c.drawing.translate(c.x, c.y));
+}
+
 /** The 2D contour(s) an opening cuts, centred on its position. */
 function openingContour(o: Opening): { drawings: Drawing[]; hw: number; hh: number } {
   if (o.type === 'round' || o.type === 'gland') {
@@ -276,18 +301,14 @@ function openingContour(o: Opening): { drawings: Drawing[]; hw: number; hh: numb
   }
   if (o.type === 'speaker') {
     const d = Number(o.speaker);
-    const cone = d * 0.425; // radius of the sounding area
-    if (o.speakerStyle === 'open') return { drawings: [drawCircle(cone)], hw: d / 2, hh: d / 2 };
-    const hole = Math.min(4.5, Math.max(2, d / 14));
-    const { cells } = patternCells('holes', hole, hole * 0.6, 0, 2 * cone, 2 * cone, (x, y, hw) => Math.hypot(x, y) + hw <= cone);
-    return { drawings: cells.map((c) => c.drawing.translate(c.x, c.y)), hw: d / 2, hh: d / 2 };
+    return { drawings: grille(o.grille, d * 0.425), hw: d / 2, hh: d / 2 }; // the sounding area is smaller than the frame
   }
   if (o.type === 'fan') {
     const size = Number(o.fan);
     const s = FANS[o.fan] / 2;
     const screw = size <= 50 ? 1.7 : 2.25;
     const holes = [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sy]) => drawCircle(screw).translate(sx * s, sy * s));
-    return { drawings: [drawCircle(size * 0.47), ...holes], hw: size / 2, hh: size / 2 };
+    return { drawings: [...grille(o.grille, size * 0.47), ...holes], hw: size / 2, hh: size / 2 };
   }
   const [w, h, r] = o.type === 'rect' ? [o.width, o.rectHeight, o.radius] : CONNECTORS[o.type];
   return { drawings: [roundedRect(w, h, r)], hw: w / 2, hh: h / 2 };
@@ -301,7 +322,8 @@ export function* buildEnclosure(p: EnclosureParams): Build {
   const out = makeOutline(p);
   const H = p.height;
   const t = Math.min(p.wall, out.inradius / 2, H / 4);
-  const lidT = Math.min(p.lidThickness, H / 4);
+  const hasLid = p.lid;
+  const lidT = hasLid ? Math.min(p.lidThickness, H / 4) : 0;
   const hb = H - lidT; // body height, the lid plate adds the rest
   const clr = p.clearance;
   const round = p.shape === 'round';
@@ -344,8 +366,8 @@ export function* buildEnclosure(p: EnclosureParams): Build {
   const cuts: Shape3D[] = [];
   const lidAdds: Shape3D[] = [];
   const lidCuts: Shape3D[] = [];
-  // Thread tools are cut on their own, so a neighbouring cutter cannot upset them.
-  const threadCuts: Shape3D[] = [];
+  // Tools that are cut on their own, so a neighbouring cutter cannot upset them.
+  const soloCuts: Shape3D[] = [];
   const lidThreadCuts: Shape3D[] = [];
   // Areas that vents must leave alone
   const floorBlocked: Rect[] = [];
@@ -357,7 +379,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
   const lidInsert = p.lidHole === 'insert';
   const postR = Math.max(lidScrew.d / 2 + 2, lidInsert ? lidScrew.insert[0] / 2 + 1.6 : 0);
   const postInset = t + postR * 0.7;
-  let screwed = p.lidFix === 'screws';
+  let screwed = hasLid && p.lidFix === 'screws';
   if (screwed && out.inradius - postInset < postR) {
     warn('note.noRoomPosts');
     screwed = false;
@@ -388,22 +410,26 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     const screw = SCREWS[p.pcbScrew];
     const insert = p.pcbHole === 'insert';
     const sr = Math.max(screw.d / 2 + 1.5, insert ? screw.insert[0] / 2 + 1.4 : 0);
-    const hx = p.pcbLength / 2 - p.holeInset;
-    const hy = p.pcbWidth / 2 - p.holeInset;
+    const known = p.pcbBoard === 'custom' ? null : BOARDS[p.pcbBoard];
+    const bl = known?.length ?? p.pcbLength;
+    const bw = known?.width ?? p.pcbWidth;
+    const hx = bl / 2 - p.holeInset;
+    const hy = bw / 2 - p.holeInset;
+    const holes = known ? known.holes.map(([x, y]) => [x - bl / 2, y - bw / 2]) : [[hx, hy], [hx, -hy], [-hx, hy], [-hx, -hy]];
     const sh = Math.min(p.standoffHeight, hb - t - 1);
     const [d, len] = insert ? screw.insert : [screw.pilot, sh];
     // An insert may reach into the floor, but must not break through it.
     const depth = Math.min(insert ? len + 0.5 : sh, sh + t - 0.8);
     if (insert && depth < len + 0.5) warn('note.standoffShort', { min: round1(len + 1.3 - t) });
-    for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-      const x = p.pcbOffsetX + sx * hx;
-      const y = p.pcbOffsetY + sy * hy;
+    for (const [px, py] of holes) {
+      const x = p.pcbOffsetX + px;
+      const y = p.pcbOffsetY + py;
       adds.push(makeCylinder(sr, sh, [x, y, t]) as Shape3D);
       cuts.push(makeCylinder(d / 2, depth + 1, [x, y, t + sh - depth]) as Shape3D);
       floorBlocked.push({ x, y, hw: sr + 1, hh: sr + 1 });
     }
 
-    const board: Rect = { x: p.pcbOffsetX, y: p.pcbOffsetY, hw: p.pcbLength / 2, hh: p.pcbWidth / 2 };
+    const board: Rect = { x: p.pcbOffsetX, y: p.pcbOffsetY, hw: bl / 2, hh: bw / 2 };
     const fits = [[1, 1], [1, -1], [-1, 1], [-1, -1]].every(([sx, sy]) => out.inside(board.x + sx * board.hw, board.y + sy * board.hh, t));
     const hitsPost = posts.some(([x, y]) => {
       const dx = Math.max(0, Math.abs(x - board.x) - board.hw);
@@ -412,8 +438,8 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     });
     if (!fits) warn('note.pcbTooLarge');
     else if (hitsPost) warn('note.pcbHitsPosts');
-    if (hx <= sr || hy <= sr) warn('note.standoffsOverlap');
-    notes.push({ level: 'info', key: `note.pcbScrews.${p.pcbHole}`, vars: { screw: p.pcbScrew, d, l: round1(depth) } });
+    if (!known && (hx <= sr || hy <= sr)) warn('note.standoffsOverlap');
+    notes.push({ level: 'info', key: `note.pcbScrews.${p.pcbHole}`, vars: { n: holes.length, screw: p.pcbScrew, d, l: round1(depth) } });
   }
 
   // --- mounting ears --------------------------------------------------------
@@ -438,15 +464,131 @@ export function* buildEnclosure(p: EnclosureParams): Build {
   }
 
   // --- lid lip and snap fits ------------------------------------------------
-  const snap = p.lidFix === 'snap';
-  const lipH = Math.min(snap ? 6 : 3, hb - t - 1);
+  const snap = hasLid && p.lidFix === 'snap';
+  let twist = hasLid && p.lidFix === 'twist';
+  if (twist && !round) {
+    warn('note.twistRoundOnly');
+    twist = false;
+  }
+  const lipH = hasLid ? Math.min(snap || twist ? 6 : 3, hb - t - 1) : 0;
   const lipW = Math.max(1.2, t * 0.8);
-  const hasLip = lipH >= 1 && out.inradius - t - clr - lipW > 1.5;
+  const hasLip = hasLid && lipH >= 1 && out.inradius - t - clr - lipW > 1.5;
   const lipSlits: Shape3D[] = [];
+  let lipTrim: Shape3D | null = null;
+  const yzPrism = (points: [number, number][], x0: number, len: number): Shape3D => {
+    const pts = points.filter((pt, i) => i === 0 || Math.hypot(pt[0] - points[i - 1][0], pt[1] - points[i - 1][1]) > 1e-6);
+    let pen = draw(pts[0]);
+    for (const pt of pts.slice(1)) pen = pen.lineTo(pt);
+    return (pen.close().sketchOnPlane('YZ', x0) as Sketch).extrude(len) as Shape3D;
+  };
+
+  // --- hinge ----------------------------------------------------------------
+  // Knuckles on the back wall and on the lid, joined by a pin (a piece of
+  // filament, a nail or a screw). The lid still prints flat, on its own.
+  const backWall = out.walls.find((w) => !w.curved && Math.abs(w.dir - 180) < 1e-6);
+  let hinged = hasLid && p.hinge;
+  if (hinged && !backWall) {
+    warn('note.needsFlatBack');
+    hinged = false;
+  }
+  if (hinged && backWall) {
+    const d = backWall.dist;
+    const gap = 0.4;
+    const play = 0.3; // between neighbouring knuckles
+    const kr = p.hingePin / 2 + 2.2;
+    const yc = -d - gap - kr; // pin axis, modelled at the front wall
+    const za = H - kr; // knuckles end flush with the top of the lid, which prints face down
+    const span = backWall.width - 2 * cornerR - 4;
+    const w = Math.min(p.hingeWidth, span);
+    const n = Math.max(1, Math.min(Math.round(p.hingeCount), Math.floor(span / (w + 6))));
+    if (w < 9) warn('note.noRoomHinge');
+    else {
+      const tang = kr * Math.SQRT1_2;
+      const barrel = (x0: number, len: number) => (drawCircle(kr).translate(yc, za).sketchOnPlane('YZ', x0) as Sketch).extrude(len) as Shape3D;
+      // The body knuckle rests on a 45° gusset, so it prints without support.
+      const gusset: [number, number][] = [
+        [-d + 0.2, Math.max(0, za - kr - gap - 0.2)],
+        [yc - tang, za - tang],
+        [yc, za],
+        [-d - gap / 2, za],
+        [-d - gap / 2, hb],
+        [-d + 0.2, hb],
+      ];
+      const tab: [number, number][] = [[-d + 0.2, hb], [-d + 0.2, H], [yc, H], [yc, hb]];
+      const knuckle = (outline: [number, number][], x0: number, len: number) => barrel(x0, len).fuse(yzPrism(outline, x0, len)) as Shape3D;
+      const pin = () => makeCylinder(p.hingePin / 2 + 0.15, w + 2, [-w / 2 - 1, yc, za], X) as Shape3D;
+      for (let i = 0; i < n; i++) {
+        const u = (i - (n - 1) / 2) * (span / n);
+        const side = w / 4 - play / 2;
+        adds.push(place(knuckle(gusset, -w / 2, side).fuse(knuckle(gusset, w / 2 - side, side)) as Shape3D, backWall, u));
+        lidAdds.push(place(knuckle(tab, -side, 2 * side), backWall, u));
+        cuts.push(place(pin(), backWall, u));
+        lidCuts.push(place(pin(), backWall, u));
+      }
+      // The lip near the hinge would jam against the back wall as the lid swings open.
+      const m = t + clr + 1.6 * lipH + gap + kr;
+      lipTrim = place(prism(roundedRect(backWall.width + 4, m + 1, 0).translate(0, -d + (m - 1) / 2), lipH + 2, hb - lipH - 1), backWall, 0);
+      notes.push({ level: 'info', key: 'note.hinge', vars: { n, pin: p.hingePin, len: round1(w) } });
+    }
+  }
+
+  // --- gasket groove in the rim ---------------------------------------------
+  if (hasLid && p.gasket) {
+    const gw = p.gasketWidth;
+    if (t < gw + 1.2) warn('note.noRoomGasket', { min: round1(gw + 1.2) });
+    else {
+      const a = (t - gw) / 2;
+      const depth = gw * 0.7;
+      soloCuts.push(prism(out.profile(a), depth + 1, hb - depth).cut(prism(out.profile(a + gw), depth + 3, hb - depth - 1)) as Shape3D);
+      notes.push({ level: 'info', key: 'note.gasket', vars: { d: round1(gw), depth: round1(depth) } });
+    }
+  }
+
+  // --- DIN rail clip on the back wall ---------------------------------------
+  // Drawn from above and extruded upwards, so it prints without support. The
+  // rail (35 mm top hat) then runs along the height of the enclosure.
+  if (p.dinClip && !backWall) warn('note.needsFlatBack');
+  else if (p.dinClip && backWall) {
+    const d = backWall.dist;
+    const hook = (pts: [number, number][]) => {
+      let pen = draw([pts[0][0], -d - pts[0][1]]);
+      for (const [x, v] of pts.slice(1)) pen = pen.lineTo([x, -d - v]);
+      return place(prism(pen.close(), Math.min(hb, 30)), backWall, 0);
+    };
+    adds.push(hook([[17.7, -0.3], [21, -0.3], [21, 3.2], [15.9, 3.2], [15.9, 1.4], [17.7, 1.4]])); // fixed hook
+    adds.push(hook([[-17.7, -0.3], [-17.7, 1.4], [-16.9, 1.4], [-16.9, 1.8], [-18.2, 4.4], [-19.4, 4.4], [-19.4, -0.3]])); // springy latch
+    notes.push({ level: 'info', key: 'note.dinClip' });
+  }
+
+  // --- twist lock (round bodies) --------------------------------------------
+  // Lugs on the lip drop through slots in the wall into a ring groove; a turn locks the lid.
+  if (twist) {
+    const R = out.inradius;
+    const s = Math.min(1, t - 0.8);
+    const base = Math.min(lipW - 0.1, 0.6);
+    const e = s + clr + base;
+    const w = Math.min(10, R * 0.5);
+    if (!hasLip || s < 0.4 || lipH < 2 * e + 0.5) warn('note.noRoomTwist');
+    else {
+      const zc = hb - lipH + e + 0.5;
+      const eg = s + 0.75 + clr;
+      const ri = R - t;
+      let tool = revolveZ([[ri - 0.5, zc - eg], [ri + s + 0.15, zc], [ri - 0.5, zc + eg]]);
+      for (const dir of [60, 180, 300]) {
+        const wall: Wall = { dir, dist: R, width: 0, curved: true };
+        lidAdds.push(place(yzPrism([[-ri + clr + base, zc - e], [-ri + clr - s - clr, zc], [-ri + clr + base, zc + e]], -w / 2, w), wall, 0));
+        const slot = prism(roundedRect(w + 1.5, s + 0.65 + 0.5, 0).translate(0, -ri - (s + 0.15) / 2 + 0.25), hb + 1 - (zc - eg), zc - eg);
+        tool = tool.fuse(place(slot, wall, 0)) as Shape3D;
+      }
+      soloCuts.push(tool);
+      notes.push({ level: 'info', key: 'note.twist' });
+    }
+  }
 
   if (snap) {
     const s = Math.min(p.snapHeight, t - 0.65); // how far the nose bites into the wall
-    const pads = out.walls.flatMap((wall) => {
+    // A hinged lid swings shut, so only the wall opposite the hinge can latch.
+    const pads = out.walls.filter((wall) => !hinged || wall.dir === 0).flatMap((wall) => {
       const room = wall.width - 2 * (Math.max(cornerRun(t + clr + lipW), round ? 0 : cornerR * tanHalf) + 1.5);
       const w = Math.min(p.snapWidth, room - 2);
       const n = Math.min(Math.round(p.snapCount), Math.floor(room / (w + 6)));
@@ -482,6 +624,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
       notes.push({ level: 'info', key: printed ? 'note.threadPrinted' : 'note.glandHole', vars: { thread: o.thread, d: round1(major + 0.4) } });
     }
 
+    if (o.face === 'lid' && !hasLid) continue;
     if (o.face === 'lid' || o.face === 'floor') {
       const lid = o.face === 'lid';
       const plate = lid ? lidT : t;
@@ -496,7 +639,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
         const boss = Math.max(0, THREAD_LENGTH - plate);
         const zIn = lid ? hb - boss : 0;
         if (boss > 0) extra.push(makeCylinder(major / 2 + 2.5, boss + 0.1, [x, y, lid ? zIn : t - 0.1]) as Shape3D);
-        (lid ? lidThreadCuts : threadCuts).push(threadTool(o.thread, plate + boss).translate(x, y, zIn));
+        (lid ? lidThreadCuts : soloCuts).push(threadTool(o.thread, plate + boss).translate(x, y, zIn));
         block = major / 2 + 2.5;
       } else {
         for (const d of drawings) target.push(prism(d.translate(x, y), plate + 2, z0 - 1));
@@ -523,7 +666,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
         adds.push(place(lug, wall, o.offset).intersect(outer) as Shape3D);
       }
       const tool = threadTool(o.thread, t + boss).translate(0, 0, -boss).rotate(90, O, X).translate(0, -wall.dist + t, zc);
-      threadCuts.push(place(tool, wall, o.offset));
+      soloCuts.push(place(tool, wall, o.offset));
     } else {
       for (const d of drawings) cuts.push(wallPrism(d, wall, o.offset, zc, hw));
     }
@@ -567,62 +710,61 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     body = body.fuse(fuseAll(adds)) as Shape3D;
     yield { label: 'stage.mounts', parts: [{ name: 'body', shape: body }] };
   }
-  if (cuts.length || threadCuts.length) {
+  if (cuts.length || soloCuts.length) {
     body = cutAll(body, cuts);
-    for (const tool of threadCuts) body = body.cut(tool) as Shape3D;
+    for (const tool of soloCuts) body = body.cut(tool) as Shape3D;
     yield { label: 'stage.cutouts', parts: [{ name: 'body', shape: body }] };
   }
 
   // --- lid, modelled in place on top of the body ----------------------------
-  let lid = prism(out.profile(0), lidT, hb);
-  if (hasLip) {
-    let lip = prism(out.profile(t + clr), lipH, hb - lipH).cut(prism(out.profile(t + clr + lipW), lipH + 2, hb - lipH - 1)) as Shape3D;
-    const gaps = [...lipSlits, ...posts.map(([x, y]) => makeCylinder(postR + clr + 0.3, lipH + 2, [x, y, hb - lipH - 1]) as Shape3D)];
-    lip = cutAll(lip, gaps);
-    lid = lid.fuse(lip) as Shape3D;
-  }
-  if (lidAdds.length) lid = lid.fuse(fuseAll(lidAdds)) as Shape3D;
-
-  if (screwed) {
-    // Through hole and head recess as one tool per screw; overlapping tools would be ignored by the kernel.
-    const rc = lidScrew.clear / 2;
-    let rh = rc;
-    let depth = 0;
-    if (p.lidHead === 'countersunk') {
-      depth = Math.min(lidScrew.sink / 2 - rc, lidT - 0.4);
-      rh = rc + depth;
-      if (depth < lidScrew.sink / 2 - rc) warn('note.lidTooThin', { min: round1(lidScrew.sink / 2 - rc + 0.4) });
-    } else if (p.lidHead === 'counterbore') {
-      depth = Math.max(0, Math.min(lidScrew.d + 0.2, lidT - 0.8));
-      rh = depth > 0 ? lidScrew.bore / 2 : rc;
-      if (depth < lidScrew.d + 0.2) warn('note.lidTooThin', { min: round1(lidScrew.d + 1) });
+  const parts: Part[] = [{ name: 'body', shape: body }];
+  if (hasLid) {
+    let lid = prism(out.profile(0), lidT, hb);
+    if (hasLip) {
+      let lip = prism(out.profile(t + clr), lipH, hb - lipH).cut(prism(out.profile(t + clr + lipW), lipH + 2, hb - lipH - 1)) as Shape3D;
+      const gaps = [...lipSlits, ...posts.map(([x, y]) => makeCylinder(postR + clr + 0.3, lipH + 2, [x, y, hb - lipH - 1]) as Shape3D)];
+      lip = cutAll(lip, gaps);
+      if (lipTrim) lip = lip.cut(lipTrim) as Shape3D;
+      lid = lid.fuse(lip) as Shape3D;
     }
-    const seat = p.lidHead === 'countersunk' ? rc : rh; // radius at the bottom of the recess
-    for (const [x, y] of posts) {
-      lidCuts.push(revolveZ([[0, hb - 1], [rc, hb - 1], [rc, H - depth], [seat, H - depth], [rh, H], [rh, H + 1], [0, H + 1]]).translate(x, y, 0));
+    if (lidAdds.length) lid = lid.fuse(fuseAll(lidAdds)) as Shape3D;
+
+    if (screwed) {
+      // Through hole and head recess as one tool per screw; overlapping tools would be ignored by the kernel.
+      const rc = lidScrew.clear / 2;
+      let rh = rc;
+      let depth = 0;
+      if (p.lidHead === 'countersunk') {
+        depth = Math.min(lidScrew.sink / 2 - rc, lidT - 0.4);
+        rh = rc + depth;
+        if (depth < lidScrew.sink / 2 - rc) warn('note.lidTooThin', { min: round1(lidScrew.sink / 2 - rc + 0.4) });
+      } else if (p.lidHead === 'counterbore') {
+        depth = Math.max(0, Math.min(lidScrew.d + 0.2, lidT - 0.8));
+        rh = depth > 0 ? lidScrew.bore / 2 : rc;
+        if (depth < lidScrew.d + 0.2) warn('note.lidTooThin', { min: round1(lidScrew.d + 1) });
+      }
+      const seat = p.lidHead === 'countersunk' ? rc : rh; // radius at the bottom of the recess
+      for (const [x, y] of posts) {
+        lidCuts.push(revolveZ([[0, hb - 1], [rc, hb - 1], [rc, H - depth], [seat, H - depth], [rh, H], [rh, H + 1], [0, H + 1]]).translate(x, y, 0));
+      }
     }
+
+    if (p.lidVent !== 'none') {
+      const cells = plateVent(p.lidVent, p.lidVentSize, p.lidVentGap, p.lidVentLength, p.lidVentArea, t + clr + lipW + 2, lidBlocked);
+      if (!cells.length) warn('note.noRoomLidVents');
+      for (const c of cells) lidCuts.push(prism(c.drawing.translate(c.x, c.y), lidT + 2, hb - 1));
+    }
+    lid = cutAll(lid, lidCuts);
+    for (const tool of lidThreadCuts) lid = lid.cut(tool) as Shape3D;
+
+    // Flip it over for printing: outside face on the bed, next to the body.
+    const offset: [number, number, number] = [body.boundingBox.bounds[1][0] + 10 + out.hx, 0, H];
+    parts.push({ name: 'lid', shape: lid.rotate(180, O, Y).translate(...offset), assembled: { flip: true, offset } });
+    yield { label: 'stage.lid', parts };
   }
-
-  if (p.lidVent !== 'none') {
-    const cells = plateVent(p.lidVent, p.lidVentSize, p.lidVentGap, p.lidVentLength, p.lidVentArea, t + clr + lipW + 2, lidBlocked);
-    if (!cells.length) warn('note.noRoomLidVents');
-    for (const c of cells) lidCuts.push(prism(c.drawing.translate(c.x, c.y), lidT + 2, hb - 1));
-  }
-  lid = cutAll(lid, lidCuts);
-  for (const tool of lidThreadCuts) lid = lid.cut(tool) as Shape3D;
-
-  // Flip it over for printing: outside face on the bed, next to the body.
-  const reach = body.boundingBox.bounds[1][0];
-  lid = lid.rotate(180, O, Y).translate(reach + 10 + out.hx, 0, H);
-
-  const parts: Part[] = [
-    { name: 'body', shape: body },
-    { name: 'lid', shape: lid },
-  ];
-  yield { label: 'stage.lid', parts };
 
   const inner = { h: round1(hb - t) };
-  if (p.shape === 'box') notes.push({ level: 'info', key: 'note.innerSize', vars: { l: round1(p.length - 2 * t), w: round1(p.width - 2 * t), ...inner } });
-  else notes.push({ level: 'info', key: 'note.innerRound', vars: { d: round1(2 * (out.inradius - t)), ...inner } });
+  if (p.shape === 'box') notes.push({ level: 'info', key: hasLid ? 'note.innerSize' : 'note.innerSizeOpen', vars: { l: round1(p.length - 2 * t), w: round1(p.width - 2 * t), ...inner } });
+  else notes.push({ level: 'info', key: hasLid ? 'note.innerRound' : 'note.innerRoundOpen', vars: { d: round1(2 * (out.inradius - t)), ...inner } });
   return { parts, notes };
 }

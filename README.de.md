@@ -14,9 +14,9 @@ Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch
 
 | Generator | Was er erzeugt |
 | --- | --- |
-| **Elektronikgehäuse** | Rechteckiges, rundes oder vieleckiges (3–12 Ecken) Gehäuse mit Deckel. Platinen-Abstandshalter und Deckelschrauben sind getrennt einstellbar (M2–M5), jeweils als Kernloch für selbstschneidende Schrauben oder als Bohrung für Einpresshülsen; Deckelschrauben wahlweise mit Senkung für Senk- oder Zylinderkopf. Alternativ rastet der Deckel mit Rastnasen ein oder wird nur aufgesteckt. Beliebig viele Öffnungen in Wänden, Deckel oder Boden: Anschlüsse (USB-C, Micro-USB, USB-A, HDMI, RJ45), runde Bohrungen mit Vorgaben für Antennen, LEDs, Schalter und Taster, Kabelverschraubungen (M12–M40, PG7–PG21, auf Wunsch mit gedrucktem Gewinde), Lautsprecher (20–77 mm, Lochgitter oder offen, mit Haltering), Lüfter (25–80 mm) und freie Rechtecke. Die Lüftung wird für Deckel und Gehäuse getrennt eingestellt: Schlitze, runde Löcher, Waben, Dreiecke oder Quadratgitter. Optional Befestigungslaschen. Der Deckel liegt druckfertig neben dem Unterteil. |
-| **Rohradapter** | Reduzierstück zwischen zwei Rohren oder Schläuchen. Jedes Ende steckt entweder im Gegenstück oder sitzt darüber; der eingegebene Durchmesser bleibt immer die Passfläche, die Wand wächst von ihr weg. Wahlweise mit Schlauchtülle, Einführfasen, druckbarem Übergangskonus und optional als Bogen bis 180°. |
-| **Schubladen-Organizer** | Teilt eine Schublade in ein Raster gleich großer Boxen auf, die sie lückenlos füllen und auf dein Druckbett passen. Jede Box kann Trennwände (volle oder reduzierte Höhe), Griffmulden am Rand, Ablauföffnungen im Boden und eine Beschriftungsleiste bekommen. |
+| **Elektronikgehäuse** | Rechteckiges, rundes oder vieleckiges (3–12 Ecken) Gehäuse, mit oder ohne Deckel. **Vorlagen** für Raspberry Pi 3/4/5, Zero und Pico, Arduino Uno und Mega, Adafruit Feather, ESP32 DevKit und BeagleBone setzen die Abstandshalter auf das Lochbild des Boards und schneiden die Öffnungen für seine Anschlüsse; jeder Wert bleibt änderbar. Platinen-Abstandshalter und Deckelschrauben sind getrennt einstellbar (M2–M5), als Kernloch für selbstschneidende Schrauben oder als Bohrung für Einpresshülsen; Deckelschrauben wahlweise mit Senkung für Senk- oder Zylinderkopf. Der Deckel kann stattdessen mit Rastnasen einrasten, per Drehverschluss halten (runde Gehäuse) oder nur aufgesteckt werden, und er kann ein Stiftscharnier bekommen. Optional Dichtungsnut, Befestigungslaschen und Hutschienen-Clip. Beliebig viele Öffnungen in Wänden, Deckel oder Boden: Anschlüsse (USB-C, Micro-USB, USB-A einfach und gestapelt, USB-B, HDMI, Mini-/Micro-HDMI, RJ45, DC-Buchse, SD-Schlitz), runde Bohrungen mit Vorgaben für Antennen, LEDs, Schalter und Taster, Kabelverschraubungen (M12–M40, PG7–PG21, auf Wunsch mit gedrucktem Gewinde), Lautsprecher (20–77 mm) und Lüfter (25–120 mm) hinter einem Gitter aus Löchern, Waben, Quadraten, Schlitzen oder Dreiecken oder ganz offen. Die Lüftung wird für Deckel und Gehäuse getrennt eingestellt. |
+| **Rohradapter** | Reduzierstück zwischen zwei Rohren oder Schläuchen. Jedes Ende steckt entweder im Gegenstück oder sitzt darüber; der eingegebene Durchmesser bleibt immer die Passfläche, die Wand wächst von ihr weg. Schlauchtülle mit einstellbarer Anzahl, Höhe und Abstand der Widerhaken, Einführfasen, druckbarer Übergangskonus, optional als Bogen bis 180° und mit Befestigungsflansch samt Bohrungen. |
+| **Schubladen-Organizer** | Teilt eine Schublade in Boxen auf, die sie lückenlos füllen und auf dein Druckbett passen: gleich große Boxen oder gemischte Größen nach frei eingegebenen Verhältnissen (z. B. `2, 1, 1`). Jede Box kann Trennwände (volle oder reduzierte Höhe), Griffmulden am Rand, Ablauföffnungen im Boden und eine Beschriftungsleiste bekommen. |
 
 Weitere Generatoren sind geplant, siehe [Roadmap](#roadmap).
 
@@ -62,7 +62,9 @@ Mit `GENSTRIO_PORT` wählst du einen anderen Port als 4173.
 - **3MF** enthält jedes Teil als eigenes Objekt.
 - **STEP** enthält die exakte CAD-Geometrie zum Weiterbearbeiten in FreeCAD, Fusion und Ähnlichem.
 
-Alle Dateien sind in Millimetern. Der Schubladen-Organizer exportiert eine einzelne Box; die App nennt dir die Stückzahl.
+Alle Dateien sind in Millimetern. Besteht ein Modell aus mehreren Teilen, lässt sich über die Auswahl unter den Export-Knöpfen auch nur eines herunterladen, etwa nur der Deckel. Der Schubladen-Organizer exportiert jede Boxgröße einmal; die App nennt dir die Stückzahl.
+
+**Link kopieren** packt den aktuellen Generator mit allen Werten in einen Link zum Speichern oder Weitergeben. **Zusammengebaut** in der Vorschau zeigt den Deckel auf dem Gehäuse.
 
 ## Entwicklung
 
@@ -81,14 +83,15 @@ So ist der Code aufgebaut:
 - `src/engine/worker.ts` führt den CAD-Kern in einem Web Worker aus, damit die Oberfläche flüssig bleibt.
 - `src/viewer.ts` ist die three.js-Vorschau, `src/i18n.ts` enthält die deutschen und englischen Texte.
 
+Lochbilder der Boards stehen in `src/generators/boards.ts`, Vorlagen in `src/generators/templates.ts`.
+
 Für einen neuen Generator: Parameter in `meta.ts` deklarieren, eine Build-Funktion schreiben, sie in `build/index.ts` eintragen und die Texte in `i18n.ts` ergänzen.
 
 ## Roadmap
 
-- Vorlagen für gängige Boards (Arduino, ESP32, Raspberry Pi) und Hutschienengehäuse
-- Bajonettdeckel für runde Gehäuse, Dichtungsnuten, Klappdeckel
-- Organizer-Boxen in gemischten Größen
-- Weitere Fittings: Flansche, Rohrhalter, Kabeldurchführungen
+- Weitere Board-Vorlagen, auch mit den Anschlussausschnitten von BeagleBone und anderen Einplatinencomputern
+- Scharniere und Verschlüsse, die fertig montiert aus dem Drucker kommen
+- Weitere Fittings: Rohrhalter, T-Stücke, Schlauchkupplungen
 - Weitere Generatoren: Zahnräder, Text und QR-Codes in 3D, Logo-Reliefs, Ausstechformen
 
 ## Lizenz

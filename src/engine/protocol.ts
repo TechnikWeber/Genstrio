@@ -9,11 +9,12 @@ export interface PartMesh {
   triangles: Uint32Array;
   edges: Float32Array;
   instances: [number, number, number][];
+  assembled?: { flip: boolean; offset: [number, number, number] };
 }
 
 export type Request =
   | { type: 'build'; id: number; generator: GeneratorId; params: Params }
-  | { type: 'export'; id: number; generator: GeneratorId; params: Params; format: ExportFormat };
+  | { type: 'export'; id: number; generator: GeneratorId; params: Params; format: ExportFormat; only?: string };
 
 export type Response =
   | { type: 'ready' }

@@ -1,7 +1,7 @@
 import './style.css';
 import type { ExportFormat, Request, Response } from './engine/protocol';
 import { GENERATOR_IDS, GENERATORS } from './generators/meta';
-import { defaults, newItem, sanitize, type FieldDef, type GeneratorId, type ListParam, type Note, type Params, type Value } from './generators/types';
+import { defaults, fromTemplate, newItem, sanitize, type FieldDef, type GeneratorId, type ListParam, type Note, type Params, type Value } from './generators/types';
 import { getLang, setLang, t, type Lang } from './i18n';
 import { Viewer } from './viewer';
 
@@ -23,6 +23,8 @@ interface Saved {
   generator?: GeneratorId;
   lang?: Lang;
   params?: Partial<Record<GeneratorId, Record<string, unknown>>>;
+  /** Which parameter groups are unfolded, by `generator.group`. */
+  open?: Record<string, boolean>;
 }
 
 function load(): Saved {
@@ -34,6 +36,25 @@ function load(): Saved {
 }
 
 const saved = load();
+const openGroups: Record<string, boolean> = saved.open ?? {};
+
+// A shared link carries the generator and its parameters in the URL fragment.
+try {
+  const shared = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(1).replace(/-/g, '+').replace(/_/g, '/'))))) as { g: GeneratorId; p: Record<string, unknown> };
+  if (GENERATOR_IDS.includes(shared.g)) {
+    saved.generator = shared.g;
+    saved.params = { ...saved.params, [shared.g]: shared.p };
+  }
+  history.replaceState(null, '', location.pathname + location.search);
+} catch {
+  // No fragment, or not one of ours.
+}
+
+function shareLink(): string {
+  const json = JSON.stringify({ g: current, p: params[current] });
+  const code = btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${location.origin}${location.pathname}#${code}`;
+}
 // English unless the user picked a language themselves.
 let langChosen = saved.lang === 'de' || saved.lang === 'en';
 setLang(langChosen ? (saved.lang as Lang) : getLang());
@@ -45,7 +66,7 @@ const params = Object.fromEntries(
 
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, params }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, params, open: openGroups }));
   } catch {
     // Private mode or blocked storage: the app works without persistence.
   }
@@ -66,6 +87,10 @@ const statusEl = $('#status');
 const notesEl = $('#notes');
 const toolsEl = $('#tools');
 const exportEl = $('#export');
+const templateEl = $<HTMLSelectElement>('#template');
+const onlyEl = $<HTMLSelectElement>('#only');
+const assembledEl = $<HTMLButtonElement>('#assembled');
+const shareEl = $<HTMLButtonElement>('#share');
 
 // --- worker -----------------------------------------------------------------
 
@@ -145,6 +170,7 @@ worker.onmessage = (event: MessageEvent<Response>) => {
     setStatus(msg.label, true);
   } else {
     fitPending = false;
+    renderParts(msg.parts.map((part) => part.name), msg.parts.some((part) => part.assembled));
     lastNotes = { notes: msg.notes };
     renderNotes();
     setStatus('app.done', false, { ms: msg.ms });
@@ -169,7 +195,7 @@ function startExport(format: ExportFormat) {
   setExporting(true);
   statusBeforeExport = lastStatus;
   setStatus('app.exporting', true, { format: format.toUpperCase() });
-  post({ type: 'export', id: ++requestId, generator: current, params: params[current], format });
+  post({ type: 'export', id: ++requestId, generator: current, params: params[current], format, only: onlyEl.value || undefined });
 }
 
 // --- parameter form ---------------------------------------------------------
@@ -202,6 +228,14 @@ function field(def: FieldDef, values: Params, id: string, key: string): HTMLElem
     select.value = values[def.key] as string;
     select.addEventListener('change', () => update(select.value));
     row.append(el('label', { htmlFor: id, textContent: label }), select);
+  } else if (def.type === 'text') {
+    const input = el('input', { type: 'text', id, value: values[def.key] as string, maxLength: 80, spellcheck: false });
+    input.addEventListener('input', () => {
+      const ok = new RegExp(def.pattern).test(input.value);
+      input.classList.toggle('invalid', !ok);
+      if (ok) update(input.value);
+    });
+    row.append(el('label', { htmlFor: id, textContent: label }), input);
   } else {
     const range = el('input', { type: 'range', min: String(def.min), max: String(def.sliderMax ?? def.max), step: String(def.step), tabIndex: -1 });
     const number = el('input', { type: 'number', id, min: String(def.min), max: String(def.max), step: String(def.step) });
@@ -258,6 +292,10 @@ function listField(def: ListParam): HTMLElement {
 
 function applyVisibility() {
   for (const check of visibility) check();
+  // A group whose rows are all hidden disappears as a whole.
+  for (const group of form.querySelectorAll<HTMLElement>('details')) {
+    group.hidden = ![...group.querySelectorAll<HTMLElement>(':scope > .field, :scope > .list')].some((row) => !row.hidden);
+  }
 }
 
 function renderForm() {
@@ -267,14 +305,44 @@ function renderForm() {
   for (const def of GENERATORS[current].params) {
     let group = groups.get(def.group);
     if (!group) {
-      group = el('fieldset', {}, [el('legend', { textContent: t(`${current}.group.${def.group}`) })]);
-      groups.set(def.group, group);
+      // Folded by default except for the first two, so a long form stays easy to scan.
+      const key = `${current}.${def.group}`;
+      const details = el('details', { open: openGroups[key] ?? groups.size < 2 }, [el('summary', { textContent: t(`${current}.group.${def.group}`) })]);
+      details.addEventListener('toggle', () => {
+        openGroups[key] = details.open;
+        save();
+      });
+      groups.set(def.group, (group = details));
     }
     group.append(def.type === 'list' ? listField(def) : field(def, params[current], `p-${def.key}`, def.key));
   }
   form.replaceChildren(...groups.values());
   applyVisibility();
   form.scrollTop = scroll;
+}
+
+function renderTemplates() {
+  const names = Object.keys(GENERATORS[current].templates ?? {});
+  templateEl.hidden = !names.length;
+  templateEl.replaceChildren(
+    el('option', { value: '', textContent: t('app.template') }),
+    ...names.map((name) => el('option', { value: name, textContent: t(`${current}.template.${name}`) })),
+  );
+  templateEl.setAttribute('aria-label', t('app.template'));
+}
+
+/** Offer the parts of the finished model for separate export and, if they fit together, the assembled view. */
+let partNames = '';
+function renderParts(names: string[], canAssemble: boolean) {
+  assembledEl.hidden = !canAssemble;
+  if (names.join() === partNames) return;
+  partNames = names.join();
+  const label = (name: string) => {
+    const text = t(`part.${name}`);
+    return text.startsWith('part.') ? name : text;
+  };
+  onlyEl.replaceChildren(el('option', { value: '', textContent: t('app.allParts') }), ...names.map((name) => el('option', { value: name, textContent: label(name) })));
+  onlyEl.hidden = names.length < 2;
 }
 
 // --- chrome -----------------------------------------------------------------
@@ -289,6 +357,11 @@ function renderChrome() {
   fit.title = t('app.fit');
   fit.setAttribute('aria-label', t('app.fit'));
   $('#reset').textContent = t('app.reset');
+  shareEl.textContent = t('app.share');
+  assembledEl.textContent = t('app.assembled');
+  onlyEl.setAttribute('aria-label', t('app.parts'));
+  partNames = '';
+  renderTemplates();
   $('#lang').textContent = getLang() === 'de' ? 'EN' : 'DE';
   toolsEl.setAttribute('aria-label', t('app.tools'));
 
@@ -326,8 +399,35 @@ exportEl.append(
 );
 
 $('#fit').addEventListener('click', () => viewer.fit());
+assembledEl.addEventListener('click', () => {
+  const on = assembledEl.getAttribute('aria-pressed') !== 'true';
+  assembledEl.setAttribute('aria-pressed', String(on));
+  viewer.setAssembled(on);
+  viewer.fit();
+  renderStatus();
+});
+templateEl.addEventListener('change', () => {
+  if (!templateEl.value) return;
+  params[current] = fromTemplate(GENERATORS[current], templateEl.value);
+  fitPending = true;
+  renderForm();
+  scheduleRebuild();
+});
+shareEl.addEventListener('click', async () => {
+  const link = shareLink();
+  try {
+    await navigator.clipboard.writeText(link);
+    shareEl.textContent = t('app.shared');
+  } catch {
+    // No clipboard access: put the link in the address bar instead.
+    location.hash = link.split('#')[1];
+    shareEl.textContent = t('app.sharedUrl');
+  }
+  setTimeout(() => (shareEl.textContent = t('app.share')), 2500);
+});
 $('#reset').addEventListener('click', () => {
   params[current] = defaults(GENERATORS[current]);
+  templateEl.value = '';
   fitPending = true;
   renderForm();
   scheduleRebuild();

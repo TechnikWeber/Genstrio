@@ -8,6 +8,8 @@ export interface Part {
   shape: Shape3D;
   /** Positions at which the preview shows the part. Exports contain it once. */
   instances?: Vec3[];
+  /** How the preview moves the part from its print position into the assembly: turned over about Y, then shifted. */
+  assembled?: { flip: boolean; offset: Vec3 };
 }
 
 export interface Stage {

@@ -87,8 +87,18 @@ export class Viewer {
     }
   }
 
+  private parts: PartMesh[] = [];
+  private assembled = false;
+
+  /** Show parts where they belong in the finished assembly instead of laid out for printing. */
+  setAssembled(on: boolean) {
+    this.assembled = on;
+    this.show(this.parts, this.frame);
+  }
+
   /** Replace the displayed model without moving the camera. */
   show(parts: PartMesh[], frame?: [number, number]) {
+    this.parts = parts;
     for (const child of [...this.model.children]) {
       this.model.remove(child);
       (child as THREE.Mesh).geometry.dispose();
@@ -100,11 +110,14 @@ export class Viewer {
       geometry.setIndex(new THREE.BufferAttribute(part.triangles, 1));
       const edges = new THREE.BufferGeometry();
       edges.setAttribute('position', new THREE.BufferAttribute(part.edges, 3));
-      for (const [x, y, z] of part.instances) {
+      const fitted = this.assembled ? part.assembled : undefined;
+      for (const [x, y, z] of fitted ? [fitted.offset] : part.instances) {
         const mesh = new THREE.Mesh(geometry, this.material);
         const lines = new THREE.LineSegments(edges, this.edgeMaterial);
-        mesh.position.set(x, y, z);
-        lines.position.set(x, y, z);
+        for (const object of [mesh, lines]) {
+          object.position.set(x, y, z);
+          if (fitted?.flip) object.rotation.y = Math.PI;
+        }
         this.model.add(mesh, lines);
       }
     }

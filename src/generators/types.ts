@@ -34,7 +34,14 @@ export interface SelectParam extends ParamBase {
   default: string;
 }
 
-export type FieldDef = NumberParam | BoolParam | SelectParam;
+/** Free text that must match `pattern`, e.g. a list of ratios. */
+export interface TextParam extends ParamBase {
+  type: 'text';
+  default: string;
+  pattern: string;
+}
+
+export type FieldDef = NumberParam | BoolParam | SelectParam | TextParam;
 
 /** A list the user can add items to; inside `item`, `showIf` receives the item. */
 export interface ListParam extends ParamBase {
@@ -51,6 +58,13 @@ export type GeneratorId = 'enclosure' | 'adapter' | 'organizer';
 export interface GeneratorMeta {
   id: GeneratorId;
   params: ParamDef[];
+  /** Named starting points: overrides on top of the defaults. */
+  templates?: Record<string, Params>;
+}
+
+/** The complete parameters of a template. */
+export function fromTemplate(meta: GeneratorMeta, name: string): Params {
+  return sanitize(meta, { ...defaults(meta), ...meta.templates?.[name] });
 }
 
 export interface Note {
@@ -75,6 +89,7 @@ function sanitizeField(d: FieldDef, v: unknown): Value {
     return Number.isFinite(n) ? Math.min(d.max, Math.max(d.min, n)) : d.default;
   }
   if (d.type === 'bool') return typeof v === 'boolean' ? v : d.default;
+  if (d.type === 'text') return typeof v === 'string' && v.length <= 80 && new RegExp(d.pattern).test(v) ? v : d.default;
   return typeof v === 'string' && d.options.includes(v) ? v : d.default;
 }
 

@@ -1,6 +1,6 @@
-import { drawCircle, type Shape3D, type Sketch } from 'replicad';
+import { drawCircle, makeCylinder, type Shape3D, type Sketch } from 'replicad';
 import type { Note } from '../types';
-import { ParamError, revolveZ as revolve, round1, type Build, type RZ } from './common';
+import { cutAll, ParamError, revolveZ as revolve, round1, type Build, type RZ } from './common';
 
 type Fit = 'inside' | 'over';
 
@@ -19,6 +19,14 @@ export interface AdapterParams {
   chamfer: number;
   angle: number;
   bendRadius: number;
+  barbCount: number;
+  barbHeight: number;
+  barbPitch: number;
+  flange: 'none' | 'end1' | 'between';
+  flangeDiameter: number;
+  flangeThickness: number;
+  flangeHoles: number;
+  flangeHoleDiameter: number;
 }
 
 /** Radii of one end. `inside`: the adapter plugs into the pipe; `over`: it slides over it. */
@@ -28,18 +36,24 @@ function endRadii(d: number, fit: Fit, wall: number, clr: number) {
   return radii;
 }
 
-/** Outer contour of a sleeve, z measured from its open end. Barbs grip against pulling off. */
-function sleeveOuter(ro: number, len: number, barbs: boolean, wall: number, chamfer = 0): RZ[] {
+interface Barbs {
+  count: number;
+  height: number;
+  pitch: number;
+}
+
+/**
+ * Outer contour of a sleeve, z measured from its open end. Barbs grip against
+ * pulling off; they sit on top of the sleeve, whose own diameter stays as entered.
+ */
+function sleeveOuter(ro: number, len: number, barbs: Barbs | null, chamfer = 0): RZ[] {
   const c = barbs ? Math.min(chamfer, 1.5) : chamfer;
   const pts: RZ[] = [[ro - c, 0], [ro, c]];
   if (barbs) {
     const lead = 2;
-    const pitch = 4;
-    const bh = Math.min(0.8, wall * 0.4);
-    const n = Math.min(4, Math.floor((len - lead - 1) / pitch));
-    for (let i = 0; i < n; i++) {
-      const z = lead + i * pitch;
-      pts.push([ro, z], [ro + bh, z + pitch], [ro, z + pitch]);
+    for (let i = 0; i < barbs.count; i++) {
+      const z = lead + i * barbs.pitch;
+      pts.push([ro, z], [ro + barbs.height, z + barbs.pitch], [ro, z + barbs.pitch]);
     }
   }
   pts.push([ro, len]);
@@ -60,16 +74,25 @@ export function* buildAdapter(p: AdapterParams): Build {
 
   // A lead-in chamfer on the mating surface of each open end eases assembly.
   const c = Math.min(p.chamfer, p.wall * 0.5, p.len1 / 2, p.len2 / 2);
-  const c1 = p.fit1 === 'inside' ? [c, 0] : [0, c];
+  // No outer chamfer where a flange sits flush on the bed.
+  const c1 = p.fit1 === 'inside' ? [p.flange === 'end1' ? 0 : c, 0] : [0, c];
   const c2 = p.fit2 === 'inside' ? [c, 0] : [0, c];
 
+  const barbsFor = (n: number, on: boolean, fit: Fit, len: number, ro: number): Barbs | null => {
+    if (!on || fit !== 'inside') return null;
+    const count = Math.min(Math.round(p.barbCount), Math.floor((len - 2.5) / p.barbPitch));
+    if (count < 1) return null;
+    notes.push({ level: 'info', key: 'note.barbs', vars: { n, count, d: round2(2 * ro), peak: round2(2 * (ro + p.barbHeight)) } });
+    return { count, height: p.barbHeight, pitch: p.barbPitch };
+  };
+
   // End 1 stands on the bed, z grows towards end 2.
-  const outerA = sleeveOuter(a.ro, p.len1, p.barbs1 && p.fit1 === 'inside', p.wall, c1[0]);
+  const outerA = sleeveOuter(a.ro, p.len1, barbsFor(1, p.barbs1, p.fit1, p.len1, a.ro), c1[0]);
   const innerA: RZ[] = [[a.ri, p.len1], [a.ri, c1[1]], [a.ri + c1[1], 0]];
   const topB = lt + p.len2;
   const outerB: RZ[] = [
     [a.ro, 0],
-    ...sleeveOuter(b.ro, p.len2, p.barbs2 && p.fit2 === 'inside', p.wall, c2[0])
+    ...sleeveOuter(b.ro, p.len2, barbsFor(2, p.barbs2, p.fit2, p.len2, b.ro), c2[0])
       .map(([rad, z]): RZ => [rad, topB - z])
       .reverse(),
   ];
@@ -95,6 +118,35 @@ export function* buildAdapter(p: AdapterParams): Build {
     const end2 = revolve([...outerB, ...innerB]).translate(0, 0, p.len1).rotate(p.angle, centre, [0, 1, 0]);
     shape = shape.fuse(end2) as Shape3D;
     notes.push({ level: 'info', key: 'note.bendNeedsSupport' });
+  }
+
+  if (p.flange !== 'none') {
+    const th = Math.min(p.flangeThickness, p.len1);
+    const z0 = p.flange === 'end1' ? 0 : p.len1 - th;
+    const R = Math.max(p.flangeDiameter / 2, a.ro + 3);
+    if (R > p.flangeDiameter / 2) notes.push({ level: 'info', key: 'note.flangeRaised', vars: { d: round1(2 * R) } });
+    // Reaches slightly into the sleeve wall so the two fuse into one solid.
+    let ring = (makeCylinder(R, th, [0, 0, z0]) as Shape3D).cut(makeCylinder(a.ro - Math.min(0.3, p.wall / 2), th + 2, [0, 0, z0 - 1]) as Shape3D) as Shape3D;
+    const n = Math.round(p.flangeHoles);
+    const hr = p.flangeHoleDiameter / 2;
+    if (n > 0 && R - a.ro < 2 * hr + 3) notes.push({ level: 'warn', key: 'note.flangeNoRoomHoles' });
+    else if (n > 0) {
+      const circle = (a.ro + R) / 2;
+      const spacing = (2 * Math.PI * circle) / n;
+      if (spacing < 2 * hr + 1.5) notes.push({ level: 'warn', key: 'note.flangeNoRoomHoles' });
+      else {
+        ring = cutAll(
+          ring,
+          Array.from({ length: n }, (_, i) => {
+            const ang = (2 * Math.PI * (i + 0.5)) / n;
+            return makeCylinder(hr, th + 2, [circle * Math.cos(ang), circle * Math.sin(ang), z0 - 1]) as Shape3D;
+          }),
+        );
+        notes.push({ level: 'info', key: 'note.flangeHoles', vars: { n, d: round1(2 * circle) } });
+      }
+    }
+    shape = shape.fuse(ring) as Shape3D;
+    if (p.flange === 'between') notes.push({ level: 'info', key: 'note.flangeNeedsSupport' });
   }
 
   // The entered diameter always stays the mating surface; the wall grows away from it.

@@ -147,20 +147,86 @@ svg {
   padding: 0 16px 12px;
 }
 
-fieldset {
-  margin: 12px 0 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
+details {
+  border-bottom: 1px solid var(--line);
 }
 
-legend {
-  padding: 0 0 4px;
+summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
   font-size: 0.72rem;
   font-weight: 650;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--accent);
+  cursor: pointer;
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+summary::after {
+  content: '';
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: 4px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+details[open] > summary::after {
+  transform: rotate(45deg);
+}
+
+details[open] {
+  padding-bottom: 8px;
+}
+
+#template {
+  width: auto;
+  margin: 6px 16px 4px;
+}
+
+#only {
+  flex-basis: 100%;
+}
+
+.field.text {
+  grid-template-columns: 1fr;
+}
+
+input[type='text'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  min-width: 0;
+}
+
+input.invalid {
+  border-color: var(--error);
+}
+
+.view-tools {
+  display: flex;
+  gap: 6px;
+}
+
+#assembled {
+  background: var(--panel);
+}
+
+#assembled[aria-pressed='true'] {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .field {
@@ -335,8 +401,9 @@ button {
   color: var(--text);
 }
 
-#reset {
-  flex-basis: 100%;
+#reset,
+#share {
+  flex: 1;
 }
 
 /* --- viewer --------------------------------------------------------------- */

@@ -1,9 +1,14 @@
+import { BOARDS } from './boards';
+import { ENCLOSURE_TEMPLATES } from './templates';
 import type { FieldDef, GeneratorId, GeneratorMeta, Params } from './types';
 
 const hasPcb = (p: Params) => p.pcb === true;
+const customPcb = (p: Params) => hasPcb(p) && p.pcbBoard === 'custom';
+const hasLid = (p: Params) => p.lid === true;
 const isBox = (p: Params) => p.shape === 'box';
-const lidScrewed = (p: Params) => p.lidFix === 'screws';
-const lidSnaps = (p: Params) => p.lidFix === 'snap';
+const lidScrewed = (p: Params) => hasLid(p) && p.lidFix === 'screws';
+const lidSnaps = (p: Params) => hasLid(p) && p.lidFix === 'snap';
+const hinged = (p: Params) => hasLid(p) && p.hinge === true;
 const onPlate = (o: Params) => o.face === 'lid' || o.face === 'floor';
 const is = (key: string, ...values: string[]) => (p: Params) => values.includes(p[key] as string);
 
@@ -11,7 +16,7 @@ export const SCREW_SIZES = ['M2', 'M2.5', 'M3', 'M4', 'M5'];
 export const VENT_PATTERNS = ['none', 'slots', 'holes', 'hex', 'triangles', 'grid'];
 
 const opening: FieldDef[] = [
-  { key: 'type', group: 'openings', type: 'select', options: ['round', 'gland', 'usbc', 'microusb', 'usba', 'hdmi', 'rj45', 'rect', 'speaker', 'fan'], default: 'round' },
+  { key: 'type', group: 'openings', type: 'select', options: ['round', 'gland', 'rect', 'usbc', 'microusb', 'usba', 'usba2', 'usbb', 'hdmi', 'minihdmi', 'microhdmi', 'rj45', 'barrel', 'sd', 'speaker', 'fan'], default: 'round' },
   { key: 'face', group: 'openings', type: 'select', options: ['front', 'back', 'left', 'right', 'lid', 'floor'], default: 'front' },
   {
     key: 'preset', group: 'openings', type: 'select', default: 'custom', showIf: is('type', 'round'),
@@ -27,9 +32,9 @@ const opening: FieldDef[] = [
   { key: 'rectHeight', group: 'openings', type: 'number', min: 1, max: 300, sliderMax: 80, step: 0.1, default: 10, unit: 'mm', showIf: is('type', 'rect') },
   { key: 'radius', group: 'openings', type: 'number', min: 0, max: 50, sliderMax: 10, step: 0.1, default: 1, unit: 'mm', showIf: is('type', 'rect') },
   { key: 'speaker', group: 'openings', type: 'select', options: ['20', '23', '28', '36', '40', '45', '50', '57', '66', '77'], default: '40', showIf: is('type', 'speaker') },
-  { key: 'speakerStyle', group: 'openings', type: 'select', options: ['grille', 'open'], default: 'grille', showIf: is('type', 'speaker') },
   { key: 'ring', group: 'openings', type: 'bool', default: true, showIf: (o) => o.type === 'speaker' && onPlate(o) },
-  { key: 'fan', group: 'openings', type: 'select', options: ['25', '30', '40', '50', '60', '80'], default: '40', showIf: is('type', 'fan') },
+  { key: 'fan', group: 'openings', type: 'select', options: ['25', '30', '40', '50', '60', '70', '80', '92', '120'], default: '40', showIf: is('type', 'fan') },
+  { key: 'grille', group: 'openings', type: 'select', options: ['holes', 'hex', 'grid', 'slots', 'triangles', 'open'], default: 'holes', showIf: is('type', 'speaker', 'fan') },
   { key: 'offset', group: 'openings', type: 'number', min: -250, max: 250, sliderMax: 100, step: 0.5, default: 0, unit: 'mm' },
   { key: 'height', group: 'openings', type: 'number', min: 0, max: 300, sliderMax: 60, step: 0.1, default: 10, unit: 'mm', showIf: (o) => !onPlate(o) },
   { key: 'offsetY', group: 'openings', type: 'number', min: -250, max: 250, sliderMax: 100, step: 0.5, default: 0, unit: 'mm', showIf: onPlate },
@@ -37,13 +42,13 @@ const opening: FieldDef[] = [
 
 const vent = (target: 'lid' | 'body', extra: FieldDef[] = []): FieldDef[] => {
   const k = `${target}Vent`;
-  const on = (p: Params) => p[k] !== 'none';
+  const on = (p: Params) => p[k] !== 'none' && (target === 'body' || hasLid(p));
   return [
-    { key: k, group: k, type: 'select', options: VENT_PATTERNS, default: target === 'lid' ? 'slots' : 'none' },
+    { key: k, group: k, type: 'select', options: VENT_PATTERNS, default: target === 'lid' ? 'slots' : 'none', showIf: target === 'lid' ? hasLid : undefined },
     ...extra.map((d) => ({ ...d, group: k, showIf: on })),
     { key: `${k}Size`, group: k, type: 'number', min: 1, max: 30, sliderMax: 12, step: 0.1, default: 2, unit: 'mm', showIf: on },
     { key: `${k}Gap`, group: k, type: 'number', min: 0.8, max: 30, sliderMax: 12, step: 0.1, default: 2.4, unit: 'mm', showIf: on },
-    { key: `${k}Length`, group: k, type: 'number', min: 2, max: 300, sliderMax: 100, step: 1, default: target === 'lid' ? 40 : 15, unit: 'mm', showIf: (p) => p[k] === 'slots' },
+    { key: `${k}Length`, group: k, type: 'number', min: 2, max: 300, sliderMax: 100, step: 1, default: target === 'lid' ? 40 : 15, unit: 'mm', showIf: (p) => on(p) && p[k] === 'slots' },
     { key: `${k}Area`, group: k, type: 'number', min: 10, max: 100, step: 1, default: 70, unit: '%', showIf: on },
   ];
 };
@@ -61,24 +66,32 @@ export const enclosure: GeneratorMeta = {
     { key: 'cornerRadius', group: 'outer', type: 'number', min: 0, max: 60, sliderMax: 30, step: 0.5, default: 4, unit: 'mm', showIf: (p) => p.shape !== 'round' },
 
     { key: 'pcb', group: 'pcb', type: 'bool', default: true },
-    { key: 'pcbLength', group: 'pcb', type: 'number', min: 10, max: 480, sliderMax: 280, step: 0.5, default: 100, unit: 'mm', showIf: hasPcb },
-    { key: 'pcbWidth', group: 'pcb', type: 'number', min: 10, max: 480, sliderMax: 280, step: 0.5, default: 60, unit: 'mm', showIf: hasPcb },
-    { key: 'holeInset', group: 'pcb', type: 'number', min: 1.5, max: 50, sliderMax: 20, step: 0.1, default: 3.5, unit: 'mm', showIf: hasPcb },
+    { key: 'pcbBoard', group: 'pcb', type: 'select', options: ['custom', ...Object.keys(BOARDS)], default: 'custom', showIf: hasPcb },
+    { key: 'pcbLength', group: 'pcb', type: 'number', min: 10, max: 480, sliderMax: 280, step: 0.5, default: 100, unit: 'mm', showIf: customPcb },
+    { key: 'pcbWidth', group: 'pcb', type: 'number', min: 10, max: 480, sliderMax: 280, step: 0.5, default: 60, unit: 'mm', showIf: customPcb },
+    { key: 'holeInset', group: 'pcb', type: 'number', min: 1.5, max: 50, sliderMax: 20, step: 0.1, default: 3.5, unit: 'mm', showIf: customPcb },
     { key: 'standoffHeight', group: 'pcb', type: 'number', min: 1, max: 60, sliderMax: 30, step: 0.5, default: 5, unit: 'mm', showIf: hasPcb },
     { key: 'pcbOffsetX', group: 'pcb', type: 'number', min: -200, max: 200, sliderMax: 100, step: 0.5, default: 0, unit: 'mm', showIf: hasPcb },
     { key: 'pcbOffsetY', group: 'pcb', type: 'number', min: -200, max: 200, sliderMax: 100, step: 0.5, default: 0, unit: 'mm', showIf: hasPcb },
     { key: 'pcbScrew', group: 'pcb', type: 'select', options: SCREW_SIZES, default: 'M3', showIf: hasPcb },
     { key: 'pcbHole', group: 'pcb', type: 'select', options: ['selftap', 'insert'], default: 'selftap', showIf: hasPcb },
 
-    { key: 'lidFix', group: 'lid', type: 'select', options: ['screws', 'snap', 'none'], default: 'screws' },
+    { key: 'lid', group: 'lid', type: 'bool', default: true },
+    { key: 'lidFix', group: 'lid', type: 'select', options: ['screws', 'snap', 'twist', 'none'], default: 'screws', showIf: hasLid },
     { key: 'lidScrew', group: 'lid', type: 'select', options: SCREW_SIZES, default: 'M3', showIf: lidScrewed },
     { key: 'lidHole', group: 'lid', type: 'select', options: ['selftap', 'insert'], default: 'selftap', showIf: lidScrewed },
     { key: 'lidHead', group: 'lid', type: 'select', options: ['flat', 'countersunk', 'counterbore'], default: 'flat', showIf: lidScrewed },
     { key: 'snapCount', group: 'lid', type: 'number', min: 1, max: 4, step: 1, default: 1, showIf: lidSnaps },
     { key: 'snapWidth', group: 'lid', type: 'number', min: 3, max: 60, sliderMax: 30, step: 0.5, default: 10, unit: 'mm', showIf: lidSnaps },
     { key: 'snapHeight', group: 'lid', type: 'number', min: 0.2, max: 2, step: 0.05, default: 0.6, unit: 'mm', showIf: lidSnaps },
-    { key: 'lidThickness', group: 'lid', type: 'number', min: 0.8, max: 10, sliderMax: 6, step: 0.1, default: 2, unit: 'mm' },
-    { key: 'clearance', group: 'lid', type: 'number', min: 0, max: 1, step: 0.05, default: 0.2, unit: 'mm' },
+    { key: 'lidThickness', group: 'lid', type: 'number', min: 0.8, max: 10, sliderMax: 6, step: 0.1, default: 2, unit: 'mm', showIf: hasLid },
+    { key: 'clearance', group: 'lid', type: 'number', min: 0, max: 1, step: 0.05, default: 0.2, unit: 'mm', showIf: hasLid },
+    { key: 'hinge', group: 'lid', type: 'bool', default: false, showIf: hasLid },
+    { key: 'hingeCount', group: 'lid', type: 'number', min: 1, max: 4, step: 1, default: 2, showIf: hinged },
+    { key: 'hingeWidth', group: 'lid', type: 'number', min: 10, max: 120, sliderMax: 60, step: 1, default: 24, unit: 'mm', showIf: hinged },
+    { key: 'hingePin', group: 'lid', type: 'number', min: 1, max: 6, step: 0.05, default: 1.75, unit: 'mm', showIf: hinged },
+    { key: 'gasket', group: 'lid', type: 'bool', default: false, showIf: hasLid },
+    { key: 'gasketWidth', group: 'lid', type: 'number', min: 1, max: 5, step: 0.1, default: 1.5, unit: 'mm', showIf: (p) => hasLid(p) && p.gasket === true },
 
     {
       key: 'openings', group: 'openings', type: 'list', item: opening, max: 16,
@@ -90,10 +103,14 @@ export const enclosure: GeneratorMeta = {
 
     { key: 'ears', group: 'mount', type: 'select', options: ['none', 'two', 'four'], default: 'none' },
     { key: 'earHole', group: 'mount', type: 'number', min: 2, max: 10, step: 0.1, default: 4.5, unit: 'mm', showIf: (p) => p.ears !== 'none' },
+    { key: 'dinClip', group: 'mount', type: 'bool', default: false },
   ],
+  templates: ENCLOSURE_TEMPLATES,
 };
 
 const bent = (p: Params) => (p.angle as number) > 0;
+const barbed = (p: Params) => (p.fit1 === 'inside' && p.barbs1 === true) || (p.fit2 === 'inside' && p.barbs2 === true);
+const flanged = (p: Params) => p.flange !== 'none';
 
 export const adapter: GeneratorMeta = {
   id: 'adapter',
@@ -108,16 +125,28 @@ export const adapter: GeneratorMeta = {
     { key: 'len2', group: 'end2', type: 'number', min: 1, max: 500, sliderMax: 100, step: 1, default: 25, unit: 'mm' },
     { key: 'barbs2', group: 'end2', type: 'bool', default: true, showIf: (p) => p.fit2 === 'inside' },
 
+    { key: 'barbCount', group: 'barbs', type: 'number', min: 1, max: 12, step: 1, default: 4, showIf: barbed },
+    { key: 'barbHeight', group: 'barbs', type: 'number', min: 0.2, max: 5, sliderMax: 2, step: 0.1, default: 0.8, unit: 'mm', showIf: barbed },
+    { key: 'barbPitch', group: 'barbs', type: 'number', min: 1.5, max: 20, sliderMax: 10, step: 0.5, default: 4, unit: 'mm', showIf: barbed },
+
     { key: 'wall', group: 'body', type: 'number', min: 0.4, max: 50, sliderMax: 10, step: 0.1, default: 2, unit: 'mm' },
     { key: 'transition', group: 'body', type: 'number', min: 0, max: 500, sliderMax: 100, step: 1, default: 10, unit: 'mm' },
     { key: 'clearance', group: 'body', type: 'number', min: -1, max: 5, sliderMax: 1, step: 0.05, default: 0.3, unit: 'mm' },
     { key: 'chamfer', group: 'body', type: 'number', min: 0, max: 5, sliderMax: 2, step: 0.1, default: 0.6, unit: 'mm' },
     { key: 'angle', group: 'body', type: 'number', min: 0, max: 180, step: 1, default: 0, unit: '°' },
     { key: 'bendRadius', group: 'body', type: 'number', min: 1, max: 1000, sliderMax: 200, step: 1, default: 40, unit: 'mm', showIf: bent },
+
+    { key: 'flange', group: 'flange', type: 'select', options: ['none', 'end1', 'between'], default: 'none' },
+    { key: 'flangeDiameter', group: 'flange', type: 'number', min: 10, max: 1200, sliderMax: 200, step: 1, default: 70, unit: 'mm', showIf: flanged },
+    { key: 'flangeThickness', group: 'flange', type: 'number', min: 1, max: 30, sliderMax: 10, step: 0.5, default: 4, unit: 'mm', showIf: flanged },
+    { key: 'flangeHoles', group: 'flange', type: 'number', min: 0, max: 12, step: 1, default: 4, showIf: flanged },
+    { key: 'flangeHoleDiameter', group: 'flange', type: 'number', min: 2, max: 20, sliderMax: 10, step: 0.1, default: 4.5, unit: 'mm', showIf: (p) => flanged(p) && (p.flangeHoles as number) > 0 },
   ],
 };
 
 const manual = (p: Params) => p.layout === 'manual';
+// One to twelve positive numbers, separated by commas or spaces
+const RATIOS = '^\\s*\\d+(\\.\\d+)?(\\s*[,; ]\\s*\\d+(\\.\\d+)?){0,11}\\s*$';
 
 export const organizer: GeneratorMeta = {
   id: 'organizer',
@@ -126,9 +155,11 @@ export const organizer: GeneratorMeta = {
     { key: 'drawerDepth', group: 'drawer', type: 'number', min: 30, max: 1200, step: 1, default: 410, unit: 'mm' },
     { key: 'height', group: 'drawer', type: 'number', min: 5, max: 250, step: 1, default: 40, unit: 'mm' },
 
-    { key: 'layout', group: 'grid', type: 'select', options: ['auto', 'manual'], default: 'auto' },
-    { key: 'targetSize', group: 'grid', type: 'number', min: 20, max: 400, step: 1, default: 100, unit: 'mm', showIf: (p) => !manual(p) },
-    { key: 'maxPrint', group: 'grid', type: 'number', min: 80, max: 600, step: 1, default: 220, unit: 'mm', showIf: (p) => !manual(p) },
+    { key: 'layout', group: 'grid', type: 'select', options: ['auto', 'manual', 'custom'], default: 'auto' },
+    { key: 'targetSize', group: 'grid', type: 'number', min: 20, max: 400, step: 1, default: 100, unit: 'mm', showIf: (p) => p.layout === 'auto' },
+    { key: 'maxPrint', group: 'grid', type: 'number', min: 80, max: 600, step: 1, default: 220, unit: 'mm', showIf: (p) => p.layout === 'auto' },
+    { key: 'colRatios', group: 'grid', type: 'text', default: '2, 1, 1', pattern: RATIOS, showIf: (p) => p.layout === 'custom' },
+    { key: 'rowRatios', group: 'grid', type: 'text', default: '1, 1, 2', pattern: RATIOS, showIf: (p) => p.layout === 'custom' },
     { key: 'columns', group: 'grid', type: 'number', min: 1, max: 20, step: 1, default: 3, showIf: manual },
     { key: 'rows', group: 'grid', type: 'number', min: 1, max: 20, step: 1, default: 4, showIf: manual },
     { key: 'gap', group: 'grid', type: 'number', min: 0, max: 5, step: 0.1, default: 0.5, unit: 'mm' },
