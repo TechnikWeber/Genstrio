@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Parametric generators for 3D printing: enclosures, pipe adapters, drawer organizers. Runs entirely in your browser." />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>Genstrio</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="panel">
+        <header>
+          <img src="./icon.svg" alt="" width="34" height="34" />
+          <div>
+            <h1>Genstrio</h1>
+            <p id="tagline"></p>
+          </div>
+          <button id="lang" type="button" class="ghost"></button>
+        </header>
+        <nav id="tools"></nav>
+        <p id="desc"></p>
+        <form id="params" autocomplete="off" onsubmit="return false"></form>
+        <footer>
+          <span id="export-label"></span>
+          <div id="export"></div>
+          <button id="reset" type="button" class="ghost"></button>
+        </footer>
+      </aside>
+      <main>
+        <div id="viewer"></div>
+        <div class="overlay top">
+          <p id="status" role="status" class="busy"></p>
+          <button id="fit" type="button" class="ghost">
+            <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+          </button>
+        </div>
+        <div class="overlay bottom">
+          <ul id="notes"></ul>
+          <p id="hint"></p>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

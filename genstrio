@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Genstrio launcher: installs dependencies and builds on first run, then
+# serves the app on localhost and opens it in the browser.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="$(dirname "$SELF")"
+APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+DESKTOP_FILE="$APPS/genstrio.desktop"
+BIN_LINK="$HOME/.local/bin/genstrio"
+
+usage() {
+  cat <<EOF
+Usage: ./genstrio [option]
+
+  (no option)    build if needed, start the local server, open the browser
+  --window       open in a chromeless app window (needs Chromium/Chrome/Brave)
+  --no-open      start the server without opening a browser
+  --dev          development server with hot reload
+  --rebuild      force a fresh build, then start
+  --install      add Genstrio to the application menu and to ~/.local/bin
+  --uninstall    remove the menu entry and the ~/.local/bin link
+  --help         show this help
+
+Environment: GENSTRIO_PORT (default 4173)
+EOF
+}
+
+need_node() {
+  if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
+    echo "Genstrio needs Node.js 20.19 or newer (https://nodejs.org)." >&2
+    echo "  Fedora: sudo dnf install nodejs    Debian/Ubuntu: sudo apt install nodejs npm" >&2
+    exit 1
+  fi
+}
+
+# Rebuild when dist/ is missing or older than any source file.
+ensure_build() {
+  cd "$ROOT"
+  if [ ! -d node_modules ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then
+    echo "Installing dependencies ..."
+    npm ci --no-audit --no-fund
+  fi
+  if [ ! -f dist/index.html ] || [ -n "$(find src public index.html package.json vite.config.ts -newer dist/index.html -print -quit)" ]; then
+    echo "Building ..."
+    npm run --silent build
+  fi
+}
+
+install_launcher() {
+  mkdir -p "$APPS" "$(dirname "$BIN_LINK")"
+  cat >"$DESKTOP_FILE" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Genstrio
+GenericName=3D Print Generators
+GenericName[de]=3D-Druck-Generatoren
+Comment=Parametric generators for 3D printing
+Comment[de]=Parametrische Generatoren für den 3D-Druck
+Exec="$SELF" --window --auto-exit
+Icon=$ROOT/public/icon.svg
+Terminal=false
+Categories=Graphics;3DGraphics;Engineering;
+StartupNotify=false
+EOF
+  ln -sf "$SELF" "$BIN_LINK"
+  command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" >/dev/null 2>&1 || true
+  echo "Installed: menu entry '$DESKTOP_FILE' and command '$BIN_LINK'."
+  case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "Note: ~/.local/bin is not in your PATH." ;; esac
+}
+
+case "${1:-}" in
+  --help | -h)
+    usage
+    ;;
+  --install)
+    need_node
+    ensure_build
+    install_launcher
+    ;;
+  --uninstall)
+    rm -f "$DESKTOP_FILE" "$BIN_LINK"
+    echo "Removed the menu entry and the ~/.local/bin link."
+    ;;
+  --dev)
+    need_node
+    cd "$ROOT"
+    [ -d node_modules ] || npm ci --no-audit --no-fund
+    exec npx vite --open
+    ;;
+  --rebuild)
+    need_node
+    rm -rf "$ROOT/dist"
+    ensure_build
+    exec node "$ROOT/scripts/start.mjs" "${@:2}"
+    ;;
+  *)
+    need_node
+    ensure_build
+    exec node "$ROOT/scripts/start.mjs" "$@"
+    ;;
+esac

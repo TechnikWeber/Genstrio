@@ -1,0 +1,10 @@
+{
+  "name": "Genstrio",
+  "short_name": "Genstrio",
+  "description": "Parametric generators for 3D printing",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#16202b",
+  "theme_color": "#16202b",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
