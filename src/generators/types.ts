@@ -1,8 +1,10 @@
 // Parameter metadata shared by the UI (main thread) and the geometry worker.
 // Keep this file free of replicad imports so the UI bundle stays small.
 
-export type Value = number | boolean | string;
-export type Params = Record<string, Value>;
+export type Value = number | boolean | string | Params[];
+export interface Params {
+  [key: string]: Value;
+}
 
 interface ParamBase {
   key: string;
@@ -17,6 +19,8 @@ export interface NumberParam extends ParamBase {
   step: number;
   default: number;
   unit?: string;
+  /** Upper end of the slider when `max` is far beyond everyday values. */
+  sliderMax?: number;
 }
 
 export interface BoolParam extends ParamBase {
@@ -30,7 +34,17 @@ export interface SelectParam extends ParamBase {
   default: string;
 }
 
-export type ParamDef = NumberParam | BoolParam | SelectParam;
+export type FieldDef = NumberParam | BoolParam | SelectParam;
+
+/** A list the user can add items to; inside `item`, `showIf` receives the item. */
+export interface ListParam extends ParamBase {
+  type: 'list';
+  item: FieldDef[];
+  max: number;
+  default: Params[];
+}
+
+export type ParamDef = FieldDef | ListParam;
 
 export type GeneratorId = 'enclosure' | 'adapter' | 'organizer';
 
@@ -45,10 +59,23 @@ export interface Note {
   vars?: Record<string, string | number>;
 }
 
+const fieldDefaults = (defs: FieldDef[]): Params => Object.fromEntries(defs.map((d) => [d.key, d.default]));
+
 export function defaults(meta: GeneratorMeta): Params {
   const out: Params = {};
-  for (const d of meta.params) out[d.key] = d.default;
+  for (const d of meta.params) out[d.key] = d.type === 'list' ? d.default.map((item) => ({ ...fieldDefaults(d.item), ...item })) : d.default;
   return out;
+}
+
+export const newItem = (def: ListParam): Params => fieldDefaults(def.item);
+
+function sanitizeField(d: FieldDef, v: unknown): Value {
+  if (d.type === 'number') {
+    const n = typeof v === 'number' ? v : parseFloat(String(v));
+    return Number.isFinite(n) ? Math.min(d.max, Math.max(d.min, n)) : d.default;
+  }
+  if (d.type === 'bool') return typeof v === 'boolean' ? v : d.default;
+  return typeof v === 'string' && d.options.includes(v) ? v : d.default;
 }
 
 /** Coerce arbitrary input (URL, localStorage, UI) into valid parameter values. */
@@ -56,13 +83,13 @@ export function sanitize(meta: GeneratorMeta, input: Record<string, unknown>): P
   const out: Params = {};
   for (const d of meta.params) {
     const v = input[d.key];
-    if (d.type === 'number') {
-      const n = typeof v === 'number' ? v : parseFloat(String(v));
-      out[d.key] = Number.isFinite(n) ? Math.min(d.max, Math.max(d.min, n)) : d.default;
-    } else if (d.type === 'bool') {
-      out[d.key] = typeof v === 'boolean' ? v : d.default;
-    } else {
-      out[d.key] = typeof v === 'string' && d.options.includes(v) ? v : d.default;
+    if (d.type !== 'list') out[d.key] = sanitizeField(d, v);
+    else if (!Array.isArray(v)) out[d.key] = defaults({ id: meta.id, params: [d] })[d.key];
+    else {
+      out[d.key] = v
+        .filter((item) => item && typeof item === 'object')
+        .slice(0, d.max)
+        .map((item) => Object.fromEntries(d.item.map((f) => [f.key, sanitizeField(f, (item as Record<string, unknown>)[f.key])])));
     }
   }
   return out;

@@ -198,6 +198,50 @@ legend {
   grid-template-columns: 1fr;
 }
 
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.item {
+  padding: 6px 10px 8px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.item-head button {
+  padding: 0 7px;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.item input[type='number'],
+.item select {
+  background: var(--panel);
+}
+
+.add {
+  padding: 7px 9px;
+  border-style: dashed;
+}
+
+.add:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .num {
   display: flex;
   align-items: center;

@@ -5,7 +5,7 @@ import { measureVolume, setOC, type Shape3D } from 'replicad';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BUILDERS, ParamError, type BuildResult, type Stage } from '../src/generators/build';
 import { GENERATORS } from '../src/generators/meta';
-import { defaults, type GeneratorId, type Params } from '../src/generators/types';
+import { defaults, newItem, sanitize, type GeneratorId, type ListParam, type Params } from '../src/generators/types';
 import { meshPart, write3mf } from '../src/engine/export';
 
 beforeAll(async () => {
@@ -30,6 +30,10 @@ const size = (s: Shape3D) => {
 };
 const warnings = (r: BuildResult) => r.notes.filter((n) => n.level === 'warn').map((n) => n.key);
 
+const opening = (o: Params): Params => ({ ...newItem(GENERATORS.enclosure.params.find((d) => d.key === 'openings') as ListParam), ...o });
+const plain: Params = { openings: [], lidVent: 'none', bodyVent: 'none' };
+const volumes = (overrides: Params) => run('enclosure', overrides).result.parts.map((part) => measureVolume(part.shape));
+
 describe('enclosure', () => {
   it('builds body and lid with the requested outer size', () => {
     const { result, stages } = run('enclosure');
@@ -39,35 +43,174 @@ describe('enclosure', () => {
     expect(w).toBeCloseTo(80, 1);
     expect(h).toBeCloseTo(33, 1);
     expect(size(lid.shape)[2]).toBeCloseTo(5, 1);
+    expect(lid.shape.boundingBox.bounds[0][2]).toBeCloseTo(0, 3);
     expect(stages.length).toBeGreaterThanOrEqual(4);
     expect(warnings(result)).toEqual([]);
     // Floor ~19 cm³ + walls ~24 cm³ + corner posts and standoffs ~5 cm³
     const vol = measureVolume(body.shape);
     expect(vol).toBeGreaterThan(43_000);
     expect(vol).toBeLessThan(50_000);
+    expect(body.shape.solids.length).toBe(1);
+    expect(lid.shape.solids.length).toBe(1);
   });
 
   it('cuts a port through the chosen wall', () => {
-    const closed = measureVolume(run('enclosure', { port: 'none', vents: 'none' }).result.parts[0].shape);
-    for (const portSide of ['front', 'back', 'left', 'right']) {
-      const open = measureVolume(run('enclosure', { port: 'usbc', portSide, vents: 'none' }).result.parts[0].shape);
+    const [closed] = volumes(plain);
+    for (const face of ['front', 'back', 'left', 'right']) {
+      const [open] = volumes({ ...plain, openings: [opening({ type: 'usbc', face, height: 8.2 })] });
       // 9.4 × 3.6 mm slot through a 2 mm wall, minus rounded corners
       expect(closed - open).toBeGreaterThan(55);
       expect(closed - open).toBeLessThan(70);
     }
   });
 
-  it('vents remove material from lid and sides', () => {
-    const none = run('enclosure', { vents: 'none' }).result.parts;
-    const both = run('enclosure', { vents: 'both' }).result.parts;
-    expect(measureVolume(both[0].shape)).toBeLessThan(measureVolume(none[0].shape) - 100);
-    expect(measureVolume(both[1].shape)).toBeLessThan(measureVolume(none[1].shape) - 100);
+  it('places wall openings to the right as seen from outside', () => {
+    const at = (face: string) => {
+      const { result } = run('enclosure', { ...plain, pcb: false, lidFix: 'none', openings: [opening({ type: 'round', face, diameter: 6, offset: 20 })] });
+      const solid = run('enclosure', { ...plain, pcb: false, lidFix: 'none' }).result.parts[0].shape;
+      const plug = solid.cut(result.parts[0].shape) as Shape3D;
+      const [[x0, y0], [x1, y1]] = plug.boundingBox.bounds;
+      return [(x0 + x1) / 2, (y0 + y1) / 2];
+    };
+    expect(at('front')[0]).toBeCloseTo(20, 1);
+    expect(at('back')[0]).toBeCloseTo(-20, 1);
+    expect(at('right')[1]).toBeCloseTo(20, 1);
+    expect(at('left')[1]).toBeCloseTo(-20, 1);
   });
+
+  it('opens lid and floor, and several openings add up', () => {
+    const [body0, lid0] = volumes(plain);
+    const [body1, lid1] = volumes({
+      ...plain,
+      openings: [
+        opening({ type: 'round', face: 'lid', preset: 'sma', offset: 30 }),
+        opening({ type: 'round', face: 'floor', diameter: 10, offset: -30, offsetY: 20 }),
+        opening({ type: 'rect', face: 'back', width: 20, rectHeight: 10 }),
+      ],
+    });
+    expect(lid0 - lid1).toBeCloseTo(Math.PI * 3.25 ** 2 * 2, -1);
+    expect(body0 - body1).toBeCloseTo(Math.PI * 25 * 2 + 20 * 10 * 2, -1);
+  });
+
+  it('mirrors lid openings so they line up once the lid is flipped over', () => {
+    const { result } = run('enclosure', { ...plain, openings: [opening({ type: 'round', face: 'lid', diameter: 10, offset: 30 })] });
+    const flat = run('enclosure', plain).result.parts[1].shape;
+    const plug = flat.cut(result.parts[1].shape) as Shape3D;
+    const [[x0], [x1]] = plug.boundingBox.bounds;
+    const centre = (flat.boundingBox.bounds[0][0] + flat.boundingBox.bounds[1][0]) / 2;
+    expect((x0 + x1) / 2 - centre).toBeCloseTo(-30, 1);
+  });
+
+  it('fits a speaker with grille and locating ring, and a fan', () => {
+    const [, lid0] = volumes(plain);
+    const { result } = run('enclosure', { ...plain, openings: [opening({ type: 'speaker', face: 'lid', speaker: '40' })] });
+    expect(warnings(result)).toEqual([]);
+    const lid = result.parts[1].shape;
+    expect(lid.solids.length).toBe(1);
+    expect(size(lid)[2]).toBeCloseTo(5, 1);
+    const open = volumes({ ...plain, openings: [opening({ type: 'speaker', face: 'lid', speaker: '40', speakerStyle: 'open', ring: false })] })[1];
+    expect(lid0 - open).toBeCloseTo(Math.PI * 17 ** 2 * 2, -2);
+    const fan = volumes({ ...plain, openings: [opening({ type: 'fan', face: 'lid', fan: '40' })] })[1];
+    expect(lid0 - fan).toBeGreaterThan(2200);
+  });
+
+  it('cuts every vent pattern into lid, walls and floor', () => {
+    const [body0, lid0] = volumes(plain);
+    for (const pattern of ['slots', 'holes', 'hex', 'triangles', 'grid']) {
+      const sized = { lidVentSize: 4, bodyVentSize: 4 };
+      const { result } = run('enclosure', { ...plain, ...sized, lidVent: pattern, bodyVent: pattern, bodyVentWalls: 'all' });
+      expect(warnings(result)).toEqual([]);
+      expect(measureVolume(result.parts[0].shape)).toBeLessThan(body0 - 100);
+      expect(measureVolume(result.parts[1].shape)).toBeLessThan(lid0 - 100);
+      expect(result.parts[0].shape.solids.length).toBe(1);
+      expect(result.parts[1].shape.solids.length).toBe(1);
+    }
+    expect(volumes({ ...plain, bodyVent: 'hex', bodyVentWalls: 'floor', bodyVentSize: 5 })[0]).toBeLessThan(body0 - 100);
+    // Lid and body are independent.
+    const [body, lid] = volumes({ ...plain, lidVent: 'holes' });
+    expect(body).toBeCloseTo(body0, 3);
+    expect(lid).toBeLessThan(lid0 - 50);
+  });
+
+  it('sizes PCB and lid screws independently, with inserts and recessed heads', () => {
+    const base = volumes(plain);
+    const pcbM2 = volumes({ ...plain, pcbScrew: 'M2' });
+    expect(pcbM2[0]).not.toBeCloseTo(base[0], 0);
+    expect(pcbM2[1]).toBeCloseTo(base[1], 3);
+    const lidM4 = volumes({ ...plain, lidScrew: 'M4' });
+    expect(lidM4[1]).toBeLessThan(base[1] - 5);
+
+    const sunk = run('enclosure', { ...plain, lidHead: 'countersunk' });
+    expect(warnings(sunk.result)).toEqual([]);
+    // Four cones from Ø 3.4 to Ø 6.4, 1.5 mm deep, minus the through hole: 15.55 mm³ each
+    expect(base[1] - measureVolume(sunk.result.parts[1].shape)).toBeCloseTo(4 * 15.55, 0);
+    expect(warnings(run('enclosure', { ...plain, lidHead: 'counterbore' }).result)).toContain('note.lidTooThin');
+    expect(warnings(run('enclosure', { ...plain, lidHead: 'counterbore', lidThickness: 4.5 }).result)).toEqual([]);
+
+    const inserts = run('enclosure', { ...plain, lidHole: 'insert', pcbHole: 'insert', standoffHeight: 6 });
+    expect(warnings(inserts.result)).toEqual([]);
+    expect(inserts.result.notes.map((n) => n.key)).toEqual(expect.arrayContaining(['note.lidScrews.insert', 'note.pcbScrews.insert']));
+    expect(warnings(run('enclosure', { ...plain, pcbHole: 'insert', standoffHeight: 2 }).result)).toContain('note.standoffShort');
+  });
+
+  it('snaps the lid on instead of screwing it', () => {
+    const none = run('enclosure', { ...plain, lidFix: 'none' }).result.parts;
+    const { result } = run('enclosure', { ...plain, lidFix: 'snap' });
+    expect(warnings(result)).toEqual([]);
+    expect(result.notes.map((n) => n.key)).toContain('note.snaps');
+    const [body, lid] = result.parts;
+    expect(measureVolume(body.shape)).toBeLessThan(measureVolume(none[0].shape) - 5); // grooves
+    expect(size(lid.shape)[2]).toBeCloseTo(8, 1); // taller lip
+    expect(lid.shape.solids.length).toBe(1);
+    // The noses reach past the lip into the wall, but stay inside the outline.
+    expect(size(lid.shape)[0]).toBeCloseTo(120, 1);
+    expect(warnings(run('enclosure', { ...plain, lidFix: 'snap', wall: 0.8 }).result)).toContain('note.noRoomSnaps');
+  });
+
+  it('builds round and polygonal enclosures', () => {
+    const round = run('enclosure', { shape: 'round', diameter: 100, pcbLength: 60, pcbWidth: 40, bodyVent: 'slots', bodyVentWalls: 'all' });
+    expect(warnings(round.result)).toEqual([]);
+    expect(size(round.result.parts[0].shape)[0]).toBeCloseTo(100, 1);
+    expect(size(round.result.parts[1].shape)[1]).toBeCloseTo(100, 1);
+    expect(round.result.parts[0].shape.solids.length).toBe(1);
+
+    for (const sides of [3, 4, 5, 6, 8, 12]) {
+      for (const lidFix of ['screws', 'snap']) {
+        const { result } = run('enclosure', { shape: 'polygon', sides, diameter: 140, pcbLength: 40, pcbWidth: 30, lidFix, bodyVent: 'holes', bodyVentWalls: 'all', ears: 'two' });
+        expect(warnings(result), `${sides} sides, ${lidFix}`).toEqual([]);
+        expect(result.parts[0].shape.solids.length).toBe(1);
+        expect(result.parts[1].shape.solids.length).toBe(1);
+      }
+    }
+    // A flat faces the front, so a front opening goes straight through it.
+    const tri = { ...plain, shape: 'polygon', sides: 3, diameter: 140, pcb: false, cornerRadius: 0 };
+    const [closed] = volumes(tri);
+    const [open] = volumes({ ...tri, openings: [opening({ type: 'round', face: 'front', diameter: 10 })] });
+    expect(closed - open).toBeCloseTo(Math.PI * 25 * 2, 0);
+  });
+
+  it('adds mounting ears and cable gland threads', () => {
+    const [w0] = size(run('enclosure', plain).result.parts[0].shape);
+    const eared = run('enclosure', { ...plain, ears: 'four' }).result.parts[0].shape;
+    expect(size(eared)[0]).toBeGreaterThan(w0 + 20);
+    expect(eared.solids.length).toBe(1);
+
+    const hole = volumes({ ...plain, openings: [opening({ type: 'gland', thread: 'PG9', height: 15 })] })[0];
+    const { result } = run('enclosure', { ...plain, openings: [opening({ type: 'gland', thread: 'PG9', height: 15, printThread: true })] });
+    expect(warnings(result)).toEqual([]);
+    expect(result.parts[0].shape.solids.length).toBe(1);
+    // The thread leaves more material than the clearance hole and adds a boss inside.
+    expect(measureVolume(result.parts[0].shape)).toBeGreaterThan(hole + 100);
+    expect(run('enclosure', { ...plain, openings: [opening({ type: 'gland', face: 'lid', thread: 'M16', printThread: true })] }).result.parts[1].shape.solids.length).toBe(1);
+  }, 60_000);
 
   it('survives extreme parameters', () => {
     run('enclosure', { length: 20, width: 20, height: 10, wall: 6, cornerRadius: 30 });
-    run('enclosure', { cornerRadius: 0, lidScrews: false, pcb: false, port: 'round', vents: 'both' });
+    run('enclosure', { cornerRadius: 0, lidFix: 'none', pcb: false, lidVent: 'triangles', bodyVent: 'grid' });
+    run('enclosure', { shape: 'round', diameter: 20, height: 10 });
+    run('enclosure', { shape: 'polygon', sides: 3, diameter: 20, height: 10, cornerRadius: 60 });
     expect(warnings(run('enclosure', { pcbLength: 200 }).result)).toContain('note.pcbTooLarge');
+    expect(warnings(run('enclosure', { openings: [opening({ type: 'usbc', height: 40 })] }).result)).toContain('note.portOutside');
   });
 });
 
@@ -102,6 +245,25 @@ describe('adapter', () => {
     expect(result.notes.map((n) => n.key)).toContain('note.transitionStretched');
     expect(() => run('adapter', { d1: 3, fit1: 'inside', wall: 3 })).toThrow(ParamError);
   });
+
+  it('keeps the entered diameter as the mating surface, whatever the wall', () => {
+    for (const wall of [1, 2, 6]) {
+      const end = (n: number) => run('adapter', { wall, chamfer: 0 }).result.notes.find((note) => note.vars?.n === n)!.vars!;
+      expect(end(1).id).toBeCloseTo(32.3, 5); // slides over 32 mm: the bore stays
+      expect(end(1).od).toBeCloseTo(32.3 + 2 * wall, 5);
+      expect(end(2).od).toBeCloseTo(39.7, 5); // plugs into 40 mm: the outside stays
+      expect(end(2).id).toBeCloseTo(39.7 - 2 * wall, 5);
+    }
+  });
+
+  it('chamfers the open ends and bends up to 180°', () => {
+    const sharp = measureVolume(run('adapter', { chamfer: 0 }).result.parts[0].shape);
+    const eased = run('adapter', { chamfer: 1 }).result.parts[0].shape;
+    expect(sharp - measureVolume(eased)).toBeGreaterThan(50);
+    expect(size(eased)[2]).toBeCloseTo(60, 1);
+    const u = run('adapter', { angle: 180, wall: 12, d1: 60, d2: 80 }).result.parts[0].shape;
+    expect(u.solids.length).toBe(1);
+  });
 });
 
 describe('organizer', () => {
@@ -122,10 +284,48 @@ describe('organizer', () => {
     expect(divided).toBeGreaterThan(plain + 5_000);
   });
 
+  it('lowers dividers, drains the floor, notches the rim and adds a label ledge', () => {
+    const plainBox = measureVolume(run('organizer').result.parts[0].shape);
+    const full = measureVolume(run('organizer', { dividersX: 2 }).result.parts[0].shape);
+    const low = measureVolume(run('organizer', { dividersX: 2, dividerDrop: 20 }).result.parts[0].shape);
+    expect(low).toBeLessThan(full - 2_000);
+    for (const drain of ['holes', 'slots', 'hex', 'grid']) {
+      const { result } = run('organizer', { drain });
+      expect(warnings(result)).toEqual([]);
+      expect(measureVolume(result.parts[0].shape)).toBeLessThan(plainBox - 100);
+      expect(result.parts[0].shape.solids.length).toBe(1);
+    }
+    const one = plainBox - measureVolume(run('organizer', { grip: 'front' }).result.parts[0].shape);
+    const four = plainBox - measureVolume(run('organizer', { grip: 'all' }).result.parts[0].shape);
+    // 30 × 10 mm notch through a 1.2 mm wall, minus the rounded corners
+    expect(one).toBeGreaterThan(300);
+    expect(one).toBeLessThan(360);
+    expect(four).toBeCloseTo(4 * one, 0);
+    const labelled = run('organizer', { label: true }).result.parts[0].shape;
+    expect(measureVolume(labelled)).toBeGreaterThan(plainBox + 5_000);
+    expect(size(labelled)[2]).toBeCloseTo(40, 1);
+    expect(labelled.solids.length).toBe(1);
+  });
+
   it('never exceeds the print bed in auto layout', () => {
     const { result } = run('organizer', { drawerWidth: 900, targetSize: 400, maxPrint: 200 });
     expect(size(result.parts[0].shape)[0]).toBeLessThanOrEqual(200);
     expect(warnings(result)).toEqual([]);
+  });
+});
+
+describe('parameters', () => {
+  it('sanitizes lists and clamps their fields', () => {
+    const p = sanitize(GENERATORS.enclosure, { openings: [{ type: 'speaker', diameter: 9999 }, 'junk', { type: 'nope' }], wall: 'x' });
+    const list = p.openings as Params[];
+    expect(list).toHaveLength(2);
+    expect(list[0].type).toBe('speaker');
+    expect(list[0].diameter).toBe(200);
+    expect(list[1].type).toBe('round');
+    expect(p.wall).toBe(2);
+    expect(sanitize(GENERATORS.enclosure, {}).openings).toEqual(defaults(GENERATORS.enclosure).openings);
+    // Defaults must not be shared between calls.
+    expect(defaults(GENERATORS.enclosure).openings).not.toBe(defaults(GENERATORS.enclosure).openings);
   });
 });
 

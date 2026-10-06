@@ -1,9 +1,8 @@
-import { draw, drawCircle, type Shape3D, type Sketch } from 'replicad';
+import { drawCircle, type Shape3D, type Sketch } from 'replicad';
 import type { Note } from '../types';
-import { ParamError, round1, type Build } from './common';
+import { ParamError, revolveZ as revolve, round1, type Build, type RZ } from './common';
 
 type Fit = 'inside' | 'over';
-type RZ = [number, number];
 
 export interface AdapterParams {
   d1: number;
@@ -17,6 +16,7 @@ export interface AdapterParams {
   wall: number;
   transition: number;
   clearance: number;
+  chamfer: number;
   angle: number;
   bendRadius: number;
 }
@@ -29,8 +29,9 @@ function endRadii(d: number, fit: Fit, wall: number, clr: number) {
 }
 
 /** Outer contour of a sleeve, z measured from its open end. Barbs grip against pulling off. */
-function sleeveOuter(ro: number, len: number, barbs: boolean, wall: number): RZ[] {
-  const pts: RZ[] = [[ro, 0]];
+function sleeveOuter(ro: number, len: number, barbs: boolean, wall: number, chamfer = 0): RZ[] {
+  const c = barbs ? Math.min(chamfer, 1.5) : chamfer;
+  const pts: RZ[] = [[ro - c, 0], [ro, c]];
   if (barbs) {
     const lead = 2;
     const pitch = 4;
@@ -45,17 +46,7 @@ function sleeveOuter(ro: number, len: number, barbs: boolean, wall: number): RZ[
   return pts;
 }
 
-/** Revolve a closed (radius, z) contour around the Z axis. */
-function revolve(points: RZ[]): Shape3D {
-  const pts = points.filter((pt, i) => {
-    const prev = points[(i + points.length - 1) % points.length];
-    return i === 0 || Math.hypot(pt[0] - prev[0], pt[1] - prev[1]) > 1e-6;
-  });
-  let pen = draw(pts[0]);
-  for (const pt of pts.slice(1)) pen = pen.lineTo(pt);
-  return (pen.close().sketchOnPlane('XZ') as Sketch).revolve() as Shape3D;
-}
-
+const round2 = (n: number) => Math.round(n * 100) / 100;
 const shift = (pts: RZ[], dz: number): RZ[] => pts.map(([rad, z]) => [rad, z + dz]);
 
 export function* buildAdapter(p: AdapterParams): Build {
@@ -67,17 +58,22 @@ export function* buildAdapter(p: AdapterParams): Build {
   const lt = Math.max(p.transition, Math.abs(a.ro - b.ro), Math.abs(a.ri - b.ri));
   if (lt > p.transition + 1e-6) notes.push({ level: 'info', key: 'note.transitionStretched', vars: { lt: round1(lt) } });
 
+  // A lead-in chamfer on the mating surface of each open end eases assembly.
+  const c = Math.min(p.chamfer, p.wall * 0.5, p.len1 / 2, p.len2 / 2);
+  const c1 = p.fit1 === 'inside' ? [c, 0] : [0, c];
+  const c2 = p.fit2 === 'inside' ? [c, 0] : [0, c];
+
   // End 1 stands on the bed, z grows towards end 2.
-  const outerA = sleeveOuter(a.ro, p.len1, p.barbs1 && p.fit1 === 'inside', p.wall);
-  const innerA: RZ[] = [[a.ri, p.len1], [a.ri, 0]];
+  const outerA = sleeveOuter(a.ro, p.len1, p.barbs1 && p.fit1 === 'inside', p.wall, c1[0]);
+  const innerA: RZ[] = [[a.ri, p.len1], [a.ri, c1[1]], [a.ri + c1[1], 0]];
   const topB = lt + p.len2;
   const outerB: RZ[] = [
     [a.ro, 0],
-    ...sleeveOuter(b.ro, p.len2, p.barbs2 && p.fit2 === 'inside', p.wall)
+    ...sleeveOuter(b.ro, p.len2, p.barbs2 && p.fit2 === 'inside', p.wall, c2[0])
       .map(([rad, z]): RZ => [rad, topB - z])
       .reverse(),
   ];
-  const innerB: RZ[] = [[b.ri, topB], [b.ri, lt], [a.ri, 0]];
+  const innerB: RZ[] = [[b.ri + c2[1], topB], [b.ri, topB - c2[1]], [b.ri, lt], [a.ri, 0]];
 
   let shape: Shape3D;
   if (p.angle <= 0) {
@@ -101,11 +97,14 @@ export function* buildAdapter(p: AdapterParams): Build {
     notes.push({ level: 'info', key: 'note.bendNeedsSupport' });
   }
 
-  notes.push({
-    level: 'info',
-    key: 'note.adapterEnds',
-    vars: { id1: round1(a.ri * 2), od1: round1(a.ro * 2), id2: round1(b.ri * 2), od2: round1(b.ro * 2) },
-  });
+  // The entered diameter always stays the mating surface; the wall grows away from it.
+  for (const [n, fit, d, e] of [[1, p.fit1, p.d1, a], [2, p.fit2, p.d2, b]] as const) {
+    notes.push({
+      level: 'info',
+      key: `note.adapterEnd.${fit}`,
+      vars: { n, d: round1(d), id: round2(e.ri * 2), od: round2(e.ro * 2) },
+    });
+  }
   const parts = [{ name: 'adapter', shape }];
   yield { label: 'stage.end2', parts };
   return { parts, notes };

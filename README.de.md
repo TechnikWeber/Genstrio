@@ -6,13 +6,15 @@ Parametrische Generatoren für den 3D-Druck. Ein paar Maße eingeben, dem Modell
 
 Genstrio läuft vollständig im Browser: Die Geometrie berechnet ein echter CAD-Kern (OpenCascade, nach WebAssembly kompiliert) lokal auf deinem Rechner. Kein Konto, kein Upload, keine Verarbeitung auf einem Server.
 
+Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch um.
+
 ## Generatoren
 
 | Generator | Was er erzeugt |
 | --- | --- |
-| **Elektronikgehäuse** | Gehäuse mit Deckel, Platinen-Abstandshaltern (M2–M4), Schraubdomen in den Ecken, einem Anschlussausschnitt (USB-C, Micro-USB oder runde Kabeldurchführung) auf einer beliebigen Seite sowie Lüftungsschlitzen im Deckel und/oder in den Seitenwänden. Der Deckel liegt druckfertig neben dem Unterteil. |
-| **Rohradapter** | Reduzierstück zwischen zwei Rohren oder Schläuchen. Jedes Ende steckt entweder im Gegenstück oder sitzt darüber, wahlweise mit Schlauchtülle, mit druckbarem Übergangskonus und optional als Bogen bis 90°. |
-| **Schubladen-Organizer** | Teilt eine Schublade in ein Raster gleich großer Boxen auf, die sie lückenlos füllen und auf dein Druckbett passen, wahlweise mit Trennwänden in jeder Box. |
+| **Elektronikgehäuse** | Rechteckiges, rundes oder vieleckiges (3–12 Ecken) Gehäuse mit Deckel. Platinen-Abstandshalter und Deckelschrauben sind getrennt einstellbar (M2–M5), jeweils als Kernloch für selbstschneidende Schrauben oder als Bohrung für Einpresshülsen; Deckelschrauben wahlweise mit Senkung für Senk- oder Zylinderkopf. Alternativ rastet der Deckel mit Rastnasen ein oder wird nur aufgesteckt. Beliebig viele Öffnungen in Wänden, Deckel oder Boden: Anschlüsse (USB-C, Micro-USB, USB-A, HDMI, RJ45), runde Bohrungen mit Vorgaben für Antennen, LEDs, Schalter und Taster, Kabelverschraubungen (M12–M40, PG7–PG21, auf Wunsch mit gedrucktem Gewinde), Lautsprecher (20–77 mm, Lochgitter oder offen, mit Haltering), Lüfter (25–80 mm) und freie Rechtecke. Die Lüftung wird für Deckel und Gehäuse getrennt eingestellt: Schlitze, runde Löcher, Waben, Dreiecke oder Quadratgitter. Optional Befestigungslaschen. Der Deckel liegt druckfertig neben dem Unterteil. |
+| **Rohradapter** | Reduzierstück zwischen zwei Rohren oder Schläuchen. Jedes Ende steckt entweder im Gegenstück oder sitzt darüber; der eingegebene Durchmesser bleibt immer die Passfläche, die Wand wächst von ihr weg. Wahlweise mit Schlauchtülle, Einführfasen, druckbarem Übergangskonus und optional als Bogen bis 180°. |
+| **Schubladen-Organizer** | Teilt eine Schublade in ein Raster gleich großer Boxen auf, die sie lückenlos füllen und auf dein Druckbett passen. Jede Box kann Trennwände (volle oder reduzierte Höhe), Griffmulden am Rand, Ablauföffnungen im Boden und eine Beschriftungsleiste bekommen. |
 
 Weitere Generatoren sind geplant, siehe [Roadmap](#roadmap).
 
@@ -80,7 +82,7 @@ Für einen neuen Generator: Parameter in `meta.ts` deklarieren, eine Build-Funkt
 ## Roadmap
 
 - Vorlagen für gängige Boards (Arduino, ESP32, Raspberry Pi) und Hutschienengehäuse
-- Mehrere Ausschnitte pro Gehäuse
+- Bajonettdeckel für runde Gehäuse, Dichtungsnuten, Klappdeckel
 - Organizer-Boxen in gemischten Größen
 - Weitere Fittings: Flansche, Rohrhalter, Kabeldurchführungen
 - Weitere Generatoren: Zahnräder, Text und QR-Codes in 3D, Logo-Reliefs, Ausstechformen

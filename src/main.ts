@@ -1,11 +1,11 @@
 import './style.css';
 import type { ExportFormat, Request, Response } from './engine/protocol';
 import { GENERATOR_IDS, GENERATORS } from './generators/meta';
-import { defaults, sanitize, type GeneratorId, type Note, type ParamDef, type Params } from './generators/types';
+import { defaults, newItem, sanitize, type FieldDef, type GeneratorId, type ListParam, type Note, type Params, type Value } from './generators/types';
 import { getLang, setLang, t, type Lang } from './i18n';
 import { Viewer } from './viewer';
 
-const STORAGE_KEY = 'genstrio:v1';
+const STORAGE_KEY = 'genstrio:v2';
 const FORMATS: ExportFormat[] = ['stl', '3mf', 'step'];
 
 const ICONS: Record<GeneratorId, string> = {
@@ -34,8 +34,9 @@ function load(): Saved {
 }
 
 const saved = load();
-if (saved.lang === 'de' || saved.lang === 'en') setLang(saved.lang);
-else setLang(getLang());
+// English unless the user picked a language themselves.
+let langChosen = saved.lang === 'de' || saved.lang === 'en';
+setLang(langChosen ? (saved.lang as Lang) : getLang());
 
 let current: GeneratorId = GENERATOR_IDS.includes(saved.generator as GeneratorId) ? (saved.generator as GeneratorId) : 'enclosure';
 const params = Object.fromEntries(
@@ -44,7 +45,7 @@ const params = Object.fromEntries(
 
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: getLang(), params }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, params }));
   } catch {
     // Private mode or blocked storage: the app works without persistence.
   }
@@ -173,40 +174,48 @@ function startExport(format: ExportFormat) {
 
 // --- parameter form ---------------------------------------------------------
 
-function field(def: ParamDef): HTMLElement {
-  const id = `p-${def.key}`;
-  const label = t(`${current}.p.${def.key}`);
-  const values = params[current];
+/** Re-evaluates which rows are shown; filled while the form is rendered. */
+let visibility: (() => void)[] = [];
+
+/** One input row. `values` is the object the field writes to, `key` its i18n path. */
+function field(def: FieldDef, values: Params, id: string, key: string): HTMLElement {
+  const label = t(`${current}.p.${key}`);
   const row = el('div', { className: `field ${def.type}` });
-  row.dataset.key = def.key;
+  const update = (value: Value) => {
+    values[def.key] = value;
+    applyVisibility();
+    scheduleRebuild();
+  };
+  visibility.push(() => (row.hidden = def.showIf ? !def.showIf(values) : false));
 
   if (def.type === 'bool') {
     const input = el('input', { type: 'checkbox', id, checked: values[def.key] as boolean });
-    input.addEventListener('change', () => update(def.key, input.checked));
+    input.addEventListener('change', () => update(input.checked));
     row.append(input, el('label', { htmlFor: id, textContent: label }));
   } else if (def.type === 'select') {
     const select = el('select', { id });
     for (const o of def.options) {
-      const text = t(`${current}.o.${def.key}.${o}`);
-      select.append(el('option', { value: o, textContent: text.startsWith(current) ? o : text }));
+      const text = t(`${current}.o.${key}.${o}`);
+      const plain = /^\d+$/.test(o) ? `${o} mm` : o;
+      select.append(el('option', { value: o, textContent: text.startsWith(current) ? plain : text }));
     }
     select.value = values[def.key] as string;
-    select.addEventListener('change', () => update(def.key, select.value));
+    select.addEventListener('change', () => update(select.value));
     row.append(el('label', { htmlFor: id, textContent: label }), select);
   } else {
-    const range = el('input', { type: 'range', min: String(def.min), max: String(def.max), step: String(def.step), tabIndex: -1 });
+    const range = el('input', { type: 'range', min: String(def.min), max: String(def.sliderMax ?? def.max), step: String(def.step), tabIndex: -1 });
     const number = el('input', { type: 'number', id, min: String(def.min), max: String(def.max), step: String(def.step) });
     range.value = number.value = String(values[def.key]);
     range.setAttribute('aria-hidden', 'true');
     range.addEventListener('input', () => {
       number.value = range.value;
-      update(def.key, range.valueAsNumber);
+      update(range.valueAsNumber);
     });
     number.addEventListener('input', () => {
       if (!Number.isFinite(number.valueAsNumber)) return;
       const v = Math.min(def.max, Math.max(def.min, number.valueAsNumber));
       range.value = String(v);
-      update(def.key, v);
+      update(v);
     });
     number.addEventListener('blur', () => (number.value = String(values[def.key])));
     row.append(
@@ -218,21 +227,42 @@ function field(def: ParamDef): HTMLElement {
   return row;
 }
 
-function update(key: string, value: number | boolean | string) {
-  params[current][key] = value;
-  applyVisibility();
-  scheduleRebuild();
+/** A list of cards, one per item, with buttons to add and remove items. */
+function listField(def: ListParam): HTMLElement {
+  const items = params[current][def.key] as Params[];
+  const changed = () => {
+    renderForm();
+    scheduleRebuild();
+  };
+  const cards = items.map((item, i) => {
+    const remove = el('button', { type: 'button', className: 'ghost', textContent: '×', title: t('app.remove') });
+    remove.setAttribute('aria-label', t('app.remove'));
+    remove.addEventListener('click', () => {
+      items.splice(i, 1);
+      changed();
+    });
+    const title = el('span', { textContent: `${t(`${current}.p.${def.key}.item`)} ${i + 1}` });
+    return el('div', { className: 'item' }, [
+      el('div', { className: 'item-head' }, [title, remove]),
+      ...def.item.map((f) => field(f, item, `p-${def.key}-${i}-${f.key}`, `${def.key}.${f.key}`)),
+    ]);
+  });
+  const add = el('button', { type: 'button', className: 'ghost add', textContent: `+ ${t(`${current}.p.${def.key}.add`)}` });
+  add.disabled = items.length >= def.max;
+  add.addEventListener('click', () => {
+    items.push(newItem(def));
+    changed();
+  });
+  return el('div', { className: 'list' }, [...cards, add]);
 }
 
 function applyVisibility() {
-  const values = params[current];
-  for (const def of GENERATORS[current].params) {
-    const row = form.querySelector<HTMLElement>(`[data-key="${def.key}"]`);
-    if (row) row.hidden = def.showIf ? !def.showIf(values) : false;
-  }
+  for (const check of visibility) check();
 }
 
 function renderForm() {
+  visibility = [];
+  const scroll = form.scrollTop;
   const groups = new Map<string, HTMLElement>();
   for (const def of GENERATORS[current].params) {
     let group = groups.get(def.group);
@@ -240,10 +270,11 @@ function renderForm() {
       group = el('fieldset', {}, [el('legend', { textContent: t(`${current}.group.${def.group}`) })]);
       groups.set(def.group, group);
     }
-    group.append(field(def));
+    group.append(def.type === 'list' ? listField(def) : field(def, params[current], `p-${def.key}`, def.key));
   }
   form.replaceChildren(...groups.values());
   applyVisibility();
+  form.scrollTop = scroll;
 }
 
 // --- chrome -----------------------------------------------------------------
@@ -303,6 +334,7 @@ $('#reset').addEventListener('click', () => {
 });
 $('#lang').addEventListener('click', () => {
   setLang(getLang() === 'de' ? 'en' : 'de');
+  langChosen = true;
   save();
   renderChrome();
 });

@@ -6,13 +6,15 @@ Parametric generators for 3D printing. Enter a few dimensions, watch the model b
 
 Genstrio runs entirely in your browser: the geometry is computed locally by a real CAD kernel (OpenCascade compiled to WebAssembly). No account, no upload, no server-side processing.
 
+The interface is in English; the **DE** button in the header switches to German.
+
 ## Generators
 
 | Generator | What it makes |
 | --- | --- |
-| **Electronics enclosure** | Box with lid, PCB standoffs (M2–M4), corner screw posts, a connector cutout (USB-C, Micro-USB or round cable hole) on any side, and vent slots in the lid and/or side walls. The lid is laid out next to the body, ready to print. |
-| **Pipe adapter** | Reducer between two pipes or hoses. Each end either plugs into its counterpart or slides over it, with optional hose barbs, a printable transition cone, and an optional elbow of up to 90°. |
-| **Drawer organizer** | Splits a drawer into a grid of equal boxes that fill it without gaps and fit your print bed, with optional dividers inside each box. |
+| **Electronics enclosure** | Rectangular, round or polygonal (3–12 sides) box with lid. PCB standoffs and lid screws are sized independently (M2–M5), each as self-tapping pilot hole or heat-set insert hole; lid screws can be countersunk or counterbored. Alternatively the lid snaps on or is a plain push fit. Any number of openings on walls, lid or floor: connectors (USB-C, Micro-USB, USB-A, HDMI, RJ45), round holes with presets for antennas, LEDs, switches and buttons, cable glands (M12–M40, PG7–PG21, optionally with printed thread), speakers (20–77 mm, grille or open, with locating ring), fans (25–80 mm) and free rectangles. Ventilation is set separately for lid and body: slots, round holes, honeycomb, triangles or a square grid. Optional mounting ears. The lid is laid out next to the body, ready to print. |
+| **Pipe adapter** | Reducer between two pipes or hoses. Each end either plugs into its counterpart or slides over it; the diameter you enter always stays the mating surface, the wall grows away from it. Optional hose barbs, lead-in chamfers, a printable transition cone, and an optional elbow of up to 180°. |
+| **Drawer organizer** | Splits a drawer into a grid of equal boxes that fill it without gaps and fit your print bed. Each box can have dividers (full or reduced height), finger notches in the rim, drain openings in the floor and a label ledge. |
 
 More generators are planned, see [Roadmap](#roadmap).
 
@@ -80,7 +82,7 @@ To add a generator, declare its parameters in `meta.ts`, write a build function,
 ## Roadmap
 
 - Presets for common boards (Arduino, ESP32, Raspberry Pi) and DIN-rail enclosures
-- Several cutouts per enclosure
+- Twist-lock lids for round enclosures, gasket grooves, hinged lids
 - Organizer boxes of mixed sizes
 - More fittings: flanges, pipe clamps, cable glands
 - Further generators: gears, text and QR codes in 3D, logo reliefs, cookie cutters
