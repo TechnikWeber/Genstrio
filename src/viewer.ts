@@ -111,12 +111,13 @@ export class Viewer {
       const edges = new THREE.BufferGeometry();
       edges.setAttribute('position', new THREE.BufferAttribute(part.edges, 3));
       const fitted = this.assembled ? part.assembled : undefined;
-      for (const [x, y, z] of fitted ? [fitted.offset] : part.instances) {
+      for (const [x, y, z, turn = 0] of fitted ? [fitted.offset] : part.instances) {
         const mesh = new THREE.Mesh(geometry, this.material);
         const lines = new THREE.LineSegments(edges, this.edgeMaterial);
         for (const object of [mesh, lines]) {
           object.position.set(x, y, z);
           if (fitted?.flip) object.rotation.y = Math.PI;
+          object.rotation.z = (turn * Math.PI) / 180;
         }
         this.model.add(mesh, lines);
       }

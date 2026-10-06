@@ -2,12 +2,13 @@ import { draw, drawCircle, drawPolysides, drawRoundedRectangle, makeCompound, ty
 import type { Note } from '../types';
 
 export type Vec3 = [number, number, number];
+export type Placement = Vec3 | [number, number, number, number];
 
 export interface Part {
   name: string;
   shape: Shape3D;
-  /** Positions at which the preview shows the part. Exports contain it once. */
-  instances?: Vec3[];
+  /** Positions at which the preview shows the part, optionally turned about Z by a fourth value in degrees. Exports contain it once. */
+  instances?: Placement[];
   /** How the preview moves the part from its print position into the assembly: turned over about Y, then shifted. */
   assembled?: { flip: boolean; offset: Vec3 };
 }

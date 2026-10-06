@@ -16,11 +16,11 @@ const ready = (opencascade as unknown as (o: object) => Promise<never>)({ locate
 
 const fontUrls = import.meta.glob<string>('../fonts/*.woff', { query: '?url', import: 'default', eager: true });
 
-/** The text generator needs its font before it can build. */
+/** Whatever sets text needs its font before it can build. */
 async function prepare(generator: GeneratorId, params: Params) {
-  const font = String(params.font);
+  const font = String(generator === 'text' ? params.font : generator === 'enclosure' && String(params.lidText).trim() ? params.lidTextFont : '');
   const url = fontUrls[`../fonts/${font}.woff`];
-  if (generator !== 'text' || !url || loadedFonts.has(font)) return;
+  if (!url || loadedFonts.has(font)) return;
   await loadFont(new URL(url, import.meta.url).href, font);
   loadedFonts.add(font);
 }

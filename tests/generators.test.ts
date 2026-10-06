@@ -320,7 +320,30 @@ describe('enclosure', () => {
   });
 });
 
+describe('enclosure lid text', () => {
+  const lidVolume = (overrides: Params) => measureVolume(run('enclosure', { ...plain, ...overrides }).result.parts[1].shape);
+
+  it('engraves text into the lid, never through it', () => {
+    const blank = lidVolume({});
+    const shallow = blank - lidVolume({ lidText: 'ON' });
+    const deep = blank - lidVolume({ lidText: 'ON', lidTextDepth: 5 });
+    expect(shallow).toBeGreaterThan(5);
+    expect(deep / shallow).toBeCloseTo(1.6 / 0.6, 1); // limited to the lid thickness less 0.4 mm
+    const { result } = run('enclosure', { ...plain, lidText: 'ON', lidTextDepth: 5 });
+    expect(result.parts[1].shape.solids.length).toBe(1);
+  });
+
+  it('raises text and keeps the lid on the bed', () => {
+    const { result } = run('enclosure', { ...plain, lidText: 'Power\nSupply', lidTextStyle: 'raised', lidTextDepth: 1, lidTextTurn: '90', lidTextFont: 'oswald' });
+    const lid = result.parts[1].shape;
+    expect(lid.boundingBox.bounds[0][2]).toBeCloseTo(0, 3);
+    expect(measureVolume(lid)).toBeGreaterThan(lidVolume({}) + 20);
+    expect(result.notes.map((n) => n.key)).toContain('note.lidTextRaised');
+  });
+});
+
 describe('adapter', () => {
+
   it('builds a straight reducer', () => {
     const { result } = run('adapter', { barbs2: false });
     const [l, w, h] = size(result.parts[0].shape);
@@ -608,6 +631,18 @@ describe('gridfinity', () => {
     expect(area).toBeCloseTo(400 * 300, 0);
     expect(result.frame).toEqual([400, 300]);
     expect(new Set(result.parts.map((part) => part.name)).size).toBe(result.parts.length);
+  });
+
+  it('builds plates once that only differ by half a turn', () => {
+    // 9 × 6 cells in 3 × 2 plates with a rim all round: two corner plates and two in the middle
+    const { result } = run('gridfinity', { kind: 'baseplate', plateSize: 'drawer', drawerWidth: 400, drawerDepth: 260, maxPrint: 220, plateScrews: 'corners' });
+    expect(result.parts).toHaveLength(3);
+    const placements = result.parts.flatMap((part) => part.instances!);
+    expect(placements).toHaveLength(6);
+    expect(placements.filter(([, , , turn]) => turn === 180)).toHaveLength(3);
+    // Off-centre, opposite rims differ and every plate is its own
+    const offCentre = run('gridfinity', { kind: 'baseplate', plateSize: 'drawer', drawerWidth: 400, drawerDepth: 260, maxPrint: 220, alignX: 'left', alignY: 'front' }).result;
+    expect(offCentre.parts.length).toBeGreaterThan(3);
   });
 
   it('builds every gridfinity template cleanly', () => {

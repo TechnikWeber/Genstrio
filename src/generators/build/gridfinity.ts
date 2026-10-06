@@ -1,6 +1,6 @@
 import { draw, drawCircle, drawPolysides, makeBaseBox, makeCompound, type Drawing, type Shape3D, type Sketch } from 'replicad';
 import type { Note } from '../types';
-import { cutAll, fuseAll, ParamError, prism, revolveZ, round1, roundedBox, roundedRect, type Build, type Part, type Vec3 } from './common';
+import { cutAll, fuseAll, ParamError, prism, revolveZ, round1, roundedBox, roundedRect, type Build, type Part, type Placement } from './common';
 
 export interface GridfinityParams {
   kind: 'bin' | 'baseplate';
@@ -201,10 +201,24 @@ function* buildBin(p: GridfinityParams): Build {
   return { parts: [{ name: 'bin', shape: bin }], notes };
 }
 
-/** Split `units` cells into as few runs as fit the print bed, the rims at both ends included. */
+/**
+ * Split `units` cells into as few runs as fit the print bed, the rims at both
+ * ends included. The runs are arranged symmetrically where that is possible,
+ * so opposite plates come out alike.
+ */
 function runs(units: number, before: number, after: number, maxPrint: number): number[] {
   for (let k = 1; k <= units; k++) {
-    const sizes = Array.from({ length: k }, (_, i) => Math.floor(units / k) + (i < units % k ? 1 : 0));
+    const small = Math.floor(units / k);
+    let large = units % k; // this many runs are one cell longer
+    let rest = k - large;
+    const sizes = new Array<number>(k);
+    for (let lo = 0, hi = k - 1; lo <= hi; lo++, hi--) {
+      // The shorter runs go to the ends, which also carry the rim.
+      if (lo === hi) sizes[lo] = rest ? small : small + 1;
+      else if (rest >= 2) [sizes[lo], sizes[hi], rest] = [small, small, rest - 2];
+      else if (large >= 2) [sizes[lo], sizes[hi], large] = [small + 1, small + 1, large - 2];
+      else [sizes[lo], sizes[hi], rest, large] = [small, small + 1, rest - 1, large - 1];
+    }
     const fits = sizes.every((n, i) => n * PITCH + (i === 0 ? before : 0) + (i === k - 1 ? after : 0) <= maxPrint);
     if (fits || k === units) return sizes;
   }
@@ -216,6 +230,8 @@ interface Tile {
   uy: number;
   /** Rim beyond the cells: left, right, front, back. */
   pads: [number, number, number, number];
+  /** Cells with a screw hole, as "column,row". */
+  screws: string[];
 }
 
 function* buildBaseplate(p: GridfinityParams): Build {
@@ -240,7 +256,7 @@ function* buildBaseplate(p: GridfinityParams): Build {
   const rows = runs(ny, padF, padB, p.maxPrint);
   const single = cols.length * rows.length === 1;
 
-  function makeTile(tile: Tile, corner: (i: number, j: number) => boolean): Shape3D {
+  function makeTile(tile: Tile): Shape3D {
     const [l, r, f, b] = tile.pads;
     const bw = tile.ux * PITCH + l + r;
     const bd = tile.uy * PITCH + f + b;
@@ -254,7 +270,7 @@ function* buildBaseplate(p: GridfinityParams): Build {
         const socket: Section[] = [[2.9, floor], [2.2, floor + 0.7], [2.2, floor + 2.5], [0.05, H], [0.05, H + 1]];
         tools.push(profile(PITCH, PITCH, 4, floor > 0 ? socket : [[2.9, -1], ...socket], x, y));
         if (p.plateMagnets) for (const sx of [-1, 1]) for (const sy of [-1, 1]) tools.push(hole(p.magnetDiameter, p.magnetDepth, x + sx * MAGNET_AT, y + sy * MAGNET_AT, floor));
-        if (p.plateScrews === 'all' || (p.plateScrews === 'corners' && corner(i, j))) {
+        if (p.plateScrews === 'all' || tile.screws.includes(`${i},${j}`)) {
           const sink = screwD / 2;
           tools.push(revolveZ([[0, -1], [screwD / 2, -1], [screwD / 2, floor - sink], [screwD, floor], [screwD, floor + 0.5], [0, floor + 0.5]]).translate(x, y, 0) as Shape3D);
         }
@@ -263,8 +279,17 @@ function* buildBaseplate(p: GridfinityParams): Build {
     return cutAll(block, tools);
   }
 
-  // Tiles of the same size and rim are built and exported once.
-  const kinds = new Map<string, { tile: Tile; at: Vec3[]; corner: (i: number, j: number) => boolean }>();
+  const keyOf = (tile: Tile) => `${tile.ux}x${tile.uy}/${tile.pads.map((v) => v.toFixed(2)).join('/')}/${[...tile.screws].sort().join(' ')}`;
+  /** The same tile after half a turn. */
+  const turned = ({ ux, uy, pads: [l, r, f, b], screws }: Tile): Tile => ({
+    ux,
+    uy,
+    pads: [r, l, b, f],
+    screws: screws.map((cell) => cell.split(',').map(Number)).map(([i, j]) => `${ux - 1 - i},${uy - 1 - j}`),
+  });
+
+  // Tiles of the same size and rim are built and exported once; that includes tiles which only differ by half a turn.
+  const kinds = new Map<string, { tile: Tile; at: Placement[] }>();
   let x = -(nx * PITCH + padL + padR) / 2;
   cols.forEach((ux, ci) => {
     const l = ci === 0 ? padL : 0;
@@ -274,14 +299,18 @@ function* buildBaseplate(p: GridfinityParams): Build {
       const f = ri === 0 ? padF : 0;
       const b = ri === rows.length - 1 ? padB : 0;
       // Screws in the corners of the whole plate, wherever its tiles end up
-      const cornerX = ci === 0 ? 0 : ci === cols.length - 1 ? ux - 1 : -1;
-      const cornerY = ri === 0 ? 0 : ri === rows.length - 1 ? uy - 1 : -1;
-      const ends = `${cols.length === 1 ? 'both' : cornerX}/${rows.length === 1 ? 'both' : cornerY}`;
-      const key = `${ux}x${uy}/${[l, r, f, b].map((v) => v.toFixed(2)).join('/')}/${p.plateScrews === 'corners' ? ends : ''}`;
-      const corner = (i: number, j: number) =>
-        (cols.length === 1 ? i === 0 || i === ux - 1 : i === cornerX) && (rows.length === 1 ? j === 0 || j === uy - 1 : j === cornerY);
-      if (!kinds.has(key)) kinds.set(key, { tile: { ux, uy, pads: [l, r, f, b] }, at: [], corner });
-      kinds.get(key)!.at.push([x + l + (ux * PITCH) / 2, y + f + (uy * PITCH) / 2, 0]);
+      const screws: string[] = [];
+      if (p.plateScrews === 'corners') {
+        const is = [...(ci === 0 ? [0] : []), ...(ci === cols.length - 1 ? [ux - 1] : [])];
+        const js = [...(ri === 0 ? [0] : []), ...(ri === rows.length - 1 ? [uy - 1] : [])];
+        for (const i of new Set(is)) for (const j of new Set(js)) screws.push(`${i},${j}`);
+      }
+      const tile: Tile = { ux, uy, pads: [l, r, f, b], screws };
+      const other = turned(tile);
+      const half = !kinds.has(keyOf(tile)) && (kinds.has(keyOf(other)) || keyOf(other) < keyOf(tile));
+      const kind = half ? other : tile;
+      if (!kinds.has(keyOf(kind))) kinds.set(keyOf(kind), { tile: kind, at: [] });
+      kinds.get(keyOf(kind))!.at.push([x + l + (ux * PITCH) / 2, y + f + (uy * PITCH) / 2, 0, half ? 180 : 0]);
       y += uy * PITCH + f + b;
     });
     x += ux * PITCH + l + r;
@@ -293,13 +322,13 @@ function* buildBaseplate(p: GridfinityParams): Build {
   for (const kind of kinds.values()) {
     const { tile } = kind;
     const [l, r] = tile.pads;
-    const shape = makeTile(tile, kind.corner);
+    const shape = makeTile(tile);
     const left = (tile.ux * PITCH) / 2 + l;
     const offset = parts.length ? shelf + left : 0;
     let name = single ? 'baseplate' : `plate-${tile.ux}x${tile.uy}`;
     for (let n = 2; names.has(name); n++) name = `plate-${tile.ux}x${tile.uy}-${n}`;
     names.add(name);
-    parts.push({ name, shape: offset ? (shape.translate(offset, 0, 0) as Shape3D) : shape, instances: kind.at.map(([px, py]): Vec3 => [px - offset, py, 0]) });
+    parts.push({ name, shape: offset ? (shape.translate(offset, 0, 0) as Shape3D) : shape, instances: kind.at.map(([px, py, , turn = 0]): Placement => [turn ? px + offset : px - offset, py, 0, turn]) });
     shelf = offset + (tile.ux * PITCH) / 2 + r + 10;
     if (!single) {
       const vars = { x: tile.ux, y: tile.uy, w: round1(tile.ux * PITCH + l + r), d: round1(tile.uy * PITCH + tile.pads[2] + tile.pads[3]), n: kind.at.length };

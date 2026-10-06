@@ -35,32 +35,53 @@ function capHeight(font: string): number {
   return ratio;
 }
 
-/** Extrude every outline of a drawing; letters come out as a compound of solids. */
-const extrude = (drawing: Drawing, h: number, z: number) => prism(drawing, h, z);
+export interface TextLayout {
+  /** One drawing per line, the whole block centred on the origin. */
+  lines: Drawing[];
+  width: number;
+  height: number;
+  /** Width and centre of each line, for anything drawn under it. */
+  spans: { width: number; x: number; baseline: number }[];
+}
 
-export function* buildText(p: TextParams): Build {
-  if (!loadedFonts.has(p.font)) throw new ParamError('err.fontMissing');
-  const lines = p.text.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 8);
+/** Set lines of text in a loaded font; `cap` is the height of a capital letter. */
+export function layoutText(text: string, font: string, cap: number, lineSpacing: number, align: 'left' | 'center' | 'right'): TextLayout {
+  if (!loadedFonts.has(font)) throw new ParamError('err.fontMissing');
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 8);
   if (!lines.length) throw new ParamError('err.noText');
-  const notes: Note[] = [];
-
-  // --- lay out the lines, centred on the origin --------------------------------
-  const cap = p.size;
-  const fontSize = cap / capHeight(p.font);
-  const step = cap * p.lineSpacing;
-  const drawn = lines.map((line) => drawText(line, { fontSize, fontFamily: p.font }));
+  const fontSize = cap / capHeight(font);
+  const step = cap * lineSpacing;
+  const drawn = lines.map((line) => drawText(line, { fontSize, fontFamily: font }));
   const widths = drawn.map((d) => d.boundingBox.width);
-  const textW = Math.max(...widths);
+  const width = Math.max(...widths);
   const placed = drawn.map((d, i) => {
     const [[x0]] = d.boundingBox.bounds;
-    const x = p.align === 'left' ? -textW / 2 : p.align === 'right' ? textW / 2 - widths[i] : -widths[i] / 2;
+    const x = align === 'left' ? -width / 2 : align === 'right' ? width / 2 - widths[i] : -widths[i] / 2;
     return d.translate(x - x0, -i * step);
   });
   // Descenders hang below the last baseline, accents rise above the first line.
   const bottom = Math.min(...placed.map((d) => d.boundingBox.bounds[0][1]));
   const top = Math.max(...placed.map((d) => d.boundingBox.bounds[1][1]));
-  const textH = top - bottom;
-  const shiftY = -(top + bottom) / 2;
+  const shift = -(top + bottom) / 2;
+  return {
+    lines: placed.map((d) => d.translate(0, shift)),
+    width,
+    height: top - bottom,
+    spans: placed.map((d, i) => ({ width: widths[i], x: d.boundingBox.center[0], baseline: shift - i * step })),
+  };
+}
+
+/** The lines of a layout as one solid, h high from z, moved by (x, y). */
+export function textSolid(layout: TextLayout, h: number, z: number, x = 0, y = 0): Shape3D {
+  const solids = layout.lines.map((d) => prism(d.translate(x, y), h, z));
+  return solids.length === 1 ? solids[0] : solids.reduce((a, b) => a.fuse(b) as Shape3D);
+}
+
+export function* buildText(p: TextParams): Build {
+  const notes: Note[] = [];
+  const cap = p.size;
+  const layout = layoutText(p.text, p.font, cap, p.lineSpacing, p.align);
+  const { width: textW, height: textH } = layout;
 
   // --- the plate -------------------------------------------------------------
   const hd = p.holeDiameter;
@@ -82,11 +103,9 @@ export function* buildText(p: TextParams): Build {
   const th = p.textHeight;
 
   const text = (h: number, z: number): Shape3D => {
-    const solids = placed.map((d) => extrude(d.translate((marginL - marginR) / 2, shiftY - marginT / 2), h, z));
-    let shape = solids.length === 1 ? solids[0] : solids.reduce((a, b) => a.fuse(b) as Shape3D);
+    const shape = textSolid(layout, h, z, (marginL - marginR) / 2, -marginT / 2);
     // A stamp prints mirrored, so its imprint reads the right way round.
-    if (p.mirror) shape = shape.mirror('YZ') as Shape3D;
-    return shape;
+    return p.mirror ? (shape.mirror('YZ') as Shape3D) : shape;
   };
 
   const parts: Part[] = [];
@@ -95,7 +114,7 @@ export function* buildText(p: TextParams): Build {
     if (p.bar) {
       // A bar under every baseline joins loose letters into one piece.
       const bh = Math.max(1.2, cap * 0.14);
-      for (let i = 0; i < lines.length; i++) letters = letters.fuse(prism(roundedRect(widths[i], bh, bh / 2 - 0.01).translate(placed[i].boundingBox.center[0], shiftY - i * step - bh * 0.3), th)) as Shape3D;
+      for (const span of layout.spans) letters = letters.fuse(prism(roundedRect(span.width, bh, bh / 2 - 0.01).translate(span.x, span.baseline - bh * 0.3), th)) as Shape3D;
     }
     parts.push({ name: 'text', shape: letters });
     notes.push({ level: 'info', key: 'note.textSize', vars: { w: round1(textW), h: round1(textH) } });

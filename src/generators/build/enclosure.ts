@@ -1,6 +1,7 @@
 import { draw, drawCircle, drawPolysides, makeCylinder, type Drawing, type Shape3D, type Sketch } from 'replicad';
 import { BOARDS } from '../boards';
 import type { Note } from '../types';
+import { layoutText, textSolid } from './text';
 import { cutAll, fuseAll, patternCells, prism, revolveZ, round1, roundedRect, threadCam, type Build, type Part, type Pattern } from './common';
 
 type Side = 'front' | 'back' | 'left' | 'right';
@@ -56,6 +57,14 @@ export interface EnclosureParams {
   snapWidth: number;
   snapHeight: number;
   lidThickness: number;
+  lidText: string;
+  lidTextFont: string;
+  lidTextSize: number;
+  lidTextStyle: 'engraved' | 'raised';
+  lidTextDepth: number;
+  lidTextX: number;
+  lidTextY: number;
+  lidTextTurn: '0' | '90' | '180' | '270';
   clearance: number;
   hinge: boolean;
   hingeCount: number;
@@ -748,9 +757,25 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     lid = cutAll(lid, lidCuts);
     for (const tool of lidThreadCuts) lid = lid.cut(tool) as Shape3D;
 
+    // Lettering on the outside of the lid
+    let proud = 0;
+    if (p.lidText.trim()) {
+      const layout = layoutText(p.lidText, p.lidTextFont, p.lidTextSize, 1.5, 'center');
+      const place = (shape: Shape3D) => shape.rotate(Number(p.lidTextTurn), O, [0, 0, 1]).translate(p.lidTextX, p.lidTextY, 0) as Shape3D;
+      if (p.lidTextStyle === 'raised') {
+        proud = p.lidTextDepth;
+        lid = lid.fuse(place(textSolid(layout, proud + 0.2, H - 0.2))) as Shape3D;
+        notes.push({ level: 'info', key: 'note.lidTextRaised' });
+      } else {
+        const depth = Math.min(p.lidTextDepth, lidT - 0.4);
+        lid = lid.cut(place(textSolid(layout, depth + 1, H - depth))) as Shape3D;
+        notes.push({ level: 'info', key: 'note.lidTextEngraved', vars: { d: round1(depth) } });
+      }
+    }
+
     // Flip it over for printing: outside face on the bed, next to the body.
-    const offset: [number, number, number] = [body.boundingBox.bounds[1][0] + 10 + out.hx, 0, H];
-    parts.push({ name: 'lid', shape: lid.rotate(180, O, Y).translate(...offset), assembled: { flip: true, offset: [offset[0], 0, H + lift] } });
+    const offset: [number, number, number] = [body.boundingBox.bounds[1][0] + 10 + out.hx, 0, H + proud];
+    parts.push({ name: 'lid', shape: lid.rotate(180, O, Y).translate(...offset), assembled: { flip: true, offset: [offset[0], 0, H + lift + proud] } });
     yield { label: 'stage.lid', parts };
   }
 

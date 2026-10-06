@@ -10,6 +10,7 @@ const hasLid = (p: Params) => p.lid === true;
 const isBox = (p: Params) => p.shape === 'box';
 const lidScrewed = (p: Params) => hasLid(p) && p.lidFix === 'screws';
 const lidSnaps = (p: Params) => hasLid(p) && p.lidFix === 'snap';
+const lettered = (p: Params) => hasLid(p) && String(p.lidText).trim() !== '';
 const hinged = (p: Params) => hasLid(p) && p.hinge === true;
 const onPlate = (o: Params) => o.face === 'lid' || o.face === 'floor';
 const is = (key: string, ...values: string[]) => (p: Params) => values.includes(p[key] as string);
@@ -94,6 +95,15 @@ export const enclosure: GeneratorMeta = {
     { key: 'hingePin', group: 'lid', type: 'number', min: 1, max: 6, step: 0.05, default: 1.75, unit: 'mm', showIf: hinged },
     { key: 'gasket', group: 'lid', type: 'bool', default: false, showIf: hasLid },
     { key: 'gasketWidth', group: 'lid', type: 'number', min: 1, max: 5, step: 0.1, default: 1.5, unit: 'mm', showIf: (p) => hasLid(p) && p.gasket === true },
+
+    { key: 'lidText', group: 'lidText', type: 'text', default: '', pattern: '^[\\s\\S]{0,120}$', lines: true, maxLength: 120, showIf: hasLid },
+    { key: 'lidTextFont', group: 'lidText', type: 'select', options: FONTS, default: 'inter', showIf: lettered },
+    { key: 'lidTextSize', group: 'lidText', type: 'number', min: 2, max: 100, sliderMax: 30, step: 0.5, default: 8, unit: 'mm', showIf: lettered },
+    { key: 'lidTextStyle', group: 'lidText', type: 'select', options: ['engraved', 'raised'], default: 'engraved', showIf: lettered },
+    { key: 'lidTextDepth', group: 'lidText', type: 'number', min: 0.2, max: 5, sliderMax: 2, step: 0.1, default: 0.6, unit: 'mm', showIf: lettered },
+    { key: 'lidTextX', group: 'lidText', type: 'number', min: -250, max: 250, sliderMax: 100, step: 0.5, default: 0, unit: 'mm', showIf: lettered },
+    { key: 'lidTextY', group: 'lidText', type: 'number', min: -250, max: 250, sliderMax: 100, step: 0.5, default: 0, unit: 'mm', showIf: lettered },
+    { key: 'lidTextTurn', group: 'lidText', type: 'select', options: ['0', '90', '180', '270'], default: '0', showIf: lettered },
 
     {
       key: 'openings', group: 'openings', type: 'list', item: opening, max: 16,

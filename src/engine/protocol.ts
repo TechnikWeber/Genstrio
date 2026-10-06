@@ -8,7 +8,8 @@ export interface PartMesh {
   normals: Float32Array;
   triangles: Uint32Array;
   edges: Float32Array;
-  instances: [number, number, number][];
+  /** x, y, z and optionally a turn about Z in degrees. */
+  instances: ([number, number, number] | [number, number, number, number])[];
   assembled?: { flip: boolean; offset: [number, number, number] };
 }
 

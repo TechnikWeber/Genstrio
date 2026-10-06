@@ -1,6 +1,6 @@
 {
   "name": "genstrio",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "Parametric generators for 3D printing: enclosures, pipe adapters, drawer organizers, Gridfinity, hooks, signs",
   "scripts": {
     "test": "vitest run",
