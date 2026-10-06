@@ -41,6 +41,9 @@ export interface TextParam extends ParamBase {
   type: 'text';
   default: string;
   pattern: string;
+  /** Several lines, entered in a larger box. */
+  lines?: boolean;
+  maxLength?: number;
 }
 
 export type FieldDef = NumberParam | BoolParam | SelectParam | TextParam;
@@ -55,7 +58,7 @@ export interface ListParam extends ParamBase {
 
 export type ParamDef = FieldDef | ListParam;
 
-export type GeneratorId = 'enclosure' | 'adapter' | 'organizer';
+export type GeneratorId = 'enclosure' | 'adapter' | 'organizer' | 'gridfinity' | 'hook' | 'text';
 
 export interface GeneratorMeta {
   id: GeneratorId;
@@ -91,7 +94,7 @@ function sanitizeField(d: FieldDef, v: unknown): Value {
     return Number.isFinite(n) ? Math.min(d.max, Math.max(d.min, n)) : d.default;
   }
   if (d.type === 'bool') return typeof v === 'boolean' ? v : d.default;
-  if (d.type === 'text') return typeof v === 'string' && v.length <= 80 && new RegExp(d.pattern).test(v) ? v : d.default;
+  if (d.type === 'text') return typeof v === 'string' && v.length <= (d.maxLength ?? 80) && new RegExp(d.pattern).test(v) ? v : d.default;
   return typeof v === 'string' && d.options.includes(v) ? v : d.default;
 }
 

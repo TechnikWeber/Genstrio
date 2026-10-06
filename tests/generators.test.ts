@@ -1,17 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import opencascade from 'replicad-opencascadejs';
-import { makeBaseBox, measureVolume, setOC, type Shape3D } from 'replicad';
+import { loadFont, makeBaseBox, measureVolume, setOC, type Shape3D } from 'replicad';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { BUILDERS, ParamError, type BuildResult, type Stage } from '../src/generators/build';
+import { BUILDERS, loadedFonts, ParamError, type BuildResult, type Stage } from '../src/generators/build';
+import { FONTS } from '../src/generators/fonts';
 import { GENERATORS } from '../src/generators/meta';
 import { defaults, fromTemplate, newItem, sanitize, type GeneratorId, type ListParam, type Params } from '../src/generators/types';
 import { meshPart, write3mf } from '../src/engine/export';
+import { formatLength, parseLength, setUnit } from '../src/units';
 
 beforeAll(async () => {
   const wasm = createRequire(import.meta.url).resolve('replicad-opencascadejs/wasm');
   const oc = await (opencascade as unknown as (o: object) => Promise<never>)({ wasmBinary: readFileSync(wasm) });
   setOC(oc);
+  for (const font of FONTS) {
+    const file = readFileSync(new URL(`../src/fonts/${font}.woff`, import.meta.url));
+    await loadFont(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer, font);
+    loadedFonts.add(font);
+  }
 }, 60_000);
 
 function run(id: GeneratorId, overrides: Params = {}): { result: BuildResult; stages: Stage[] } {
@@ -514,6 +521,246 @@ describe('organizer', () => {
   });
 });
 
+describe('gridfinity', () => {
+  const one = (r: BuildResult) => r.parts[0].shape;
+
+  it('builds a bin on the 42 mm grid with a foot per cell', () => {
+    const { result, stages } = run('gridfinity');
+    expect(stages.length).toBeGreaterThanOrEqual(2);
+    expect(warnings(result)).toEqual([]);
+    expect(one(result).solids.length).toBe(1);
+    const [l, w, h] = size(one(result));
+    expect(l).toBeCloseTo(83.5, 1);
+    expect(w).toBeCloseTo(41.5, 1);
+    expect(h).toBeCloseTo(21 + 4.1, 1); // three units plus the stacking lip
+    // The feet leave a gap along the grid line between the two cells
+    const slice = one(result).intersect(makeBaseBox(0.3, 30, 4).translate(0, 0, 0.2)) as Shape3D;
+    expect(measureVolume(slice)).toBeLessThan(0.01);
+  });
+
+  it('drops the lip, and fills the bin when asked', () => {
+    const plain = one(run('gridfinity', { lip: false }).result);
+    expect(size(plain)[2]).toBeCloseTo(21, 1);
+    const solid = one(run('gridfinity', { lip: false, fill: 'solid' }).result);
+    expect(measureVolume(solid)).toBeGreaterThan(measureVolume(plain) * 3);
+  });
+
+  it('adds dividers, scoop and label ledges inside', () => {
+    const base = measureVolume(one(run('gridfinity').result));
+    for (const extra of [{ divX: 2, divY: 1 }, { scoop: 10 }, { label: 'full' }, { label: 'center', divX: 1 }] as Params[]) {
+      const { result } = run('gridfinity', extra);
+      expect(warnings(result), JSON.stringify(extra)).toEqual([]);
+      expect(one(result).solids.length, JSON.stringify(extra)).toBe(1);
+      expect(measureVolume(one(result)), JSON.stringify(extra)).toBeGreaterThan(base + 50);
+    }
+  });
+
+  it('cuts magnet and screw holes into the feet', () => {
+    const base = measureVolume(one(run('gridfinity').result));
+    const corners = base - measureVolume(one(run('gridfinity', { baseHoles: 'magnets' }).result));
+    const all = base - measureVolume(one(run('gridfinity', { baseHoles: 'magnets', baseHolesAt: 'all' }).result));
+    const magnet = Math.PI * 3.25 ** 2 * 2.4;
+    // Raising the floor above the holes adds a little material back
+    expect(corners).toBeGreaterThan(4 * magnet * 0.5);
+    expect(all - corners).toBeCloseTo(4 * magnet, 0);
+    expect(one(run('gridfinity', { baseHoles: 'both', baseHolesAt: 'all' }).result).solids.length).toBe(1);
+  });
+
+  it('makes a holder with a field of pockets', () => {
+    const solid = measureVolume(one(run('gridfinity', { fill: 'solid' }).result));
+    for (const holePreset of ['bit', 'aa', 'custom']) {
+      const { result } = run('gridfinity', { fill: 'holes', holePreset });
+      expect(warnings(result), holePreset).toEqual([]);
+      expect(one(result).solids.length, holePreset).toBe(1);
+      expect(measureVolume(one(result)), holePreset).toBeLessThan(solid - 500);
+    }
+  });
+
+  it('builds a baseplate whose sockets take a bin', () => {
+    const { result } = run('gridfinity', { kind: 'baseplate', plateX: 2, plateY: 2 });
+    expect(warnings(result)).toEqual([]);
+    const plate = one(result);
+    expect(plate.solids.length).toBe(1);
+    expect(size(plate)[0]).toBeCloseTo(84, 1);
+    expect(size(plate)[2]).toBeCloseTo(4.65, 2);
+    // A 2 × 2 bin set into the plate does not collide with it
+    const bin = one(run('gridfinity', { unitsX: 2, unitsY: 2 }).result);
+    expect(measureVolume(plate.intersect(bin) as Shape3D)).toBeLessThan(0.5);
+  });
+
+  it('gives the baseplate a floor for magnets and screws', () => {
+    const { result } = run('gridfinity', { kind: 'baseplate', plateX: 2, plateY: 2, plateMagnets: true, plateScrews: 'corners' });
+    expect(warnings(result)).toEqual([]);
+    expect(one(result).solids.length).toBe(1);
+    expect(size(one(result))[2]).toBeCloseTo(2.4 + 0.8 + 4.65, 2);
+  });
+
+  it('fills a drawer with plates that fit the printer', () => {
+    const { result } = run('gridfinity', { kind: 'baseplate', plateSize: 'drawer', drawerWidth: 400, drawerDepth: 300, maxPrint: 220 });
+    expect(warnings(result)).toEqual([]);
+    let area = 0;
+    for (const part of result.parts) {
+      const [l, w] = size(part.shape);
+      expect(Math.max(l, w)).toBeLessThanOrEqual(220);
+      expect(part.shape.solids.length).toBe(1);
+      area += l * w * part.instances!.length;
+    }
+    expect(area).toBeCloseTo(400 * 300, 0);
+    expect(result.frame).toEqual([400, 300]);
+    expect(new Set(result.parts.map((part) => part.name)).size).toBe(result.parts.length);
+  });
+
+  it('builds every gridfinity template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.gridfinity.templates!)) {
+      const { result } = run('gridfinity', fromTemplate(GENERATORS.gridfinity, name));
+      expect(warnings(result), name).toEqual([]);
+      for (const part of result.parts) expect(part.shape.solids.length, name).toBe(1);
+    }
+  });
+});
+
+describe('hook', () => {
+  const one = (r: BuildResult) => r.parts[0].shape;
+
+  it('builds a hook lying on its side', () => {
+    const { result } = run('hook');
+    expect(warnings(result)).toEqual([]);
+    const shape = one(result);
+    expect(shape.solids.length).toBe(1);
+    const [out, up, width] = size(shape);
+    expect(width).toBeCloseTo(20, 1);
+    expect(up).toBeCloseTo(60, 1);
+    expect(out).toBeGreaterThan(4 + 30);
+    expect(shape.boundingBox.bounds[0][2]).toBeCloseTo(0, 3);
+  });
+
+  it('cuts the screw holes, countersunk or plain', () => {
+    const none = measureVolume(one(run('hook', { mount: 'tape' }).result));
+    const plain = none - measureVolume(one(run('hook', { countersunk: false }).result));
+    const sunk = none - measureVolume(one(run('hook').result));
+    expect(plain).toBeCloseTo(2 * Math.PI * 2.25 ** 2 * 4, 0);
+    expect(sunk).toBeGreaterThan(plain * 1.3);
+  });
+
+  it('fits a cradle to the diameter', () => {
+    const { result } = run('hook', { type: 'cradle', diameter: 40 });
+    expect(warnings(result)).toEqual([]);
+    expect(one(result).solids.length).toBe(1);
+    expect(size(one(result))[0]).toBeCloseTo(4 + 40 + 5, 1);
+  });
+
+  it('builds a shelf bracket with a rib and holes for the shelf', () => {
+    const { result } = run('hook', fromTemplate(GENERATORS.hook, 'shelf'));
+    expect(warnings(result)).toEqual([]);
+    expect(one(result).solids.length).toBe(1);
+    const noRib = run('hook', { ...fromTemplate(GENERATORS.hook, 'shelf'), rib: 0 }).result;
+    expect(measureVolume(one(result))).toBeGreaterThan(measureVolume(one(noRib)) + 1000);
+  });
+
+  it('puts several hooks on one rail, printed on its back', () => {
+    const { result } = run('hook', { count: 4, spacing: 50 });
+    expect(warnings(result)).toEqual([]);
+    const shape = one(result);
+    expect(shape.solids.length).toBe(1);
+    const [length, up, out] = size(shape);
+    expect(length).toBeCloseTo(200, 1);
+    expect(up).toBeCloseTo(60, 1);
+    expect(out).toBeGreaterThan(34);
+  });
+
+  it('hangs over a door or on a pegboard', () => {
+    const wall = size(one(run('hook', { mount: 'tape' }).result))[0];
+    const door = run('hook', { mount: 'door', doorThickness: 40 }).result;
+    expect(one(door).solids.length).toBe(1);
+    expect(size(one(door))[0]).toBeCloseTo(wall + 40 + 4, 1);
+    const peg = run('hook', { mount: 'pegboard' }).result;
+    expect(one(peg).solids.length).toBe(1);
+    expect(size(one(peg))[0]).toBeCloseTo(wall + 5.4 + 4.3, 1);
+  });
+
+  it('builds every hook template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.hook.templates!)) {
+      const { result } = run('hook', fromTemplate(GENERATORS.hook, name));
+      expect(warnings(result), name).toEqual([]);
+      expect(one(result).solids.length, name).toBe(1);
+    }
+  });
+});
+
+describe('text', () => {
+  it('raises text on a plate sized to fit it', () => {
+    const { result } = run('text');
+    expect(warnings(result)).toEqual([]);
+    expect(result.parts).toHaveLength(1);
+    const [w, h, t] = size(result.parts[0].shape);
+    expect(t).toBeCloseTo(2.4 + 1.2, 2);
+    expect(h).toBeGreaterThan(12 + 10 - 0.1); // capital height plus padding
+    expect(h).toBeLessThan(12 + 10 + 6); // … and the descender of the g
+    expect(w).toBeGreaterThan(40);
+    expect(result.parts[0].shape.solids.length).toBe(1);
+  });
+
+  it('sets the capital height in every font', () => {
+    for (const font of FONTS) {
+      const { result } = run('text', { text: 'HE', font, style: 'letters', textHeight: 2, bar: false });
+      expect(size(result.parts[0].shape)[1], font).toBeCloseTo(12, 0);
+    }
+  });
+
+  it('engraves, cuts through and makes loose letters', () => {
+    expect(() => run('text', { text: '  ' })).toThrow(ParamError);
+    const blank = 80 * 30 * 2.4;
+    const engraved = measureVolume(run('text', { text: 'Hi', plateWidth: 80, plateHeight: 30, cornerRadius: 0, style: 'engraved', textHeight: 1 }).result.parts[0].shape);
+    const cut = measureVolume(run('text', { text: 'Hi', plateWidth: 80, plateHeight: 30, cornerRadius: 0, style: 'cutout' }).result.parts[0].shape);
+    expect(engraved).toBeLessThan(blank - 20);
+    expect(blank - cut).toBeCloseTo((blank - engraved) * 2.4, 0);
+    const letters = run('text', { text: 'HL', style: 'letters', textHeight: 3 }).result.parts[0].shape;
+    expect(letters.solids.length).toBe(1); // joined by the bar
+  });
+
+  it('stacks lines and keeps a separate part for a second colour', () => {
+    const oneLine = size(run('text').result.parts[0].shape)[1];
+    const { result } = run('text', { text: 'Genstrio\nGenstrio', separate: true });
+    expect(result.parts.map((part) => part.name)).toEqual(['plate', 'text']);
+    expect(size(result.parts[0].shape)[1]).toBeCloseTo(oneLine + 12 * 1.5, 1);
+    expect(result.parts[1].shape.boundingBox.bounds[0][2]).toBeCloseTo(2.4, 3);
+  });
+
+  it('adds holes and a border, on every plate shape', () => {
+    for (const plateShape of ['rect', 'pill', 'ellipse']) {
+      for (const hole of ['left', 'top', 'both', 'corners']) {
+        const { result } = run('text', { plateShape, hole, border: 1.5 });
+        expect(warnings(result)).toEqual([]);
+        expect(result.parts[0].shape.solids.length, `${plateShape}/${hole}`).toBe(1);
+      }
+    }
+  });
+
+  it('mirrors the text for a stamp', () => {
+    const centre = (mirror: boolean) => {
+      const shape = run('text', { text: 'L', style: 'letters', bar: false, mirror, font: 'bebas-neue' }).result.parts[0].shape;
+      const foot = shape.intersect(makeBaseBox(200, 2, 50).translate(0, shape.boundingBox.bounds[0][1] + 1, -10)) as Shape3D;
+      return (foot.boundingBox.bounds[0][0] + foot.boundingBox.bounds[1][0]) / 2 - (shape.boundingBox.bounds[0][0] + shape.boundingBox.bounds[1][0]) / 2;
+    };
+    expect(centre(false)).toBeCloseTo(0, 1); // the foot of an L spans its whole width
+    const stem = (mirror: boolean) => {
+      const shape = run('text', { text: 'L', style: 'letters', bar: false, mirror, font: 'bebas-neue' }).result.parts[0].shape;
+      const head = shape.intersect(makeBaseBox(200, 2, 50).translate(0, shape.boundingBox.bounds[1][1] - 1, -10)) as Shape3D;
+      return (head.boundingBox.bounds[0][0] + head.boundingBox.bounds[1][0]) / 2 - (shape.boundingBox.bounds[0][0] + shape.boundingBox.bounds[1][0]) / 2;
+    };
+    expect(stem(false)).toBeLessThan(-1);
+    expect(stem(true)).toBeGreaterThan(1);
+  });
+
+  it('builds every text template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.text.templates!)) {
+      const { result } = run('text', fromTemplate(GENERATORS.text, name));
+      expect(warnings(result), name).toEqual([]);
+      expect(result.parts.length, name).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('parameters', () => {
   it('sanitizes lists and clamps their fields', () => {
     const p = sanitize(GENERATORS.enclosure, { openings: [{ type: 'speaker', diameter: 9999 }, 'junk', { type: 'nope' }], wall: 'x' });
@@ -526,6 +773,31 @@ describe('parameters', () => {
     expect(sanitize(GENERATORS.enclosure, {}).openings).toEqual(defaults(GENERATORS.enclosure).openings);
     // Defaults must not be shared between calls.
     expect(defaults(GENERATORS.enclosure).openings).not.toBe(defaults(GENERATORS.enclosure).openings);
+  });
+});
+
+describe('units', () => {
+  it('reads and writes inches as fractions', () => {
+    setUnit('in');
+    expect(parseLength('3 1/2')).toBeCloseTo(88.9, 4);
+    expect(parseLength('3-1/2"')).toBeCloseTo(88.9, 4);
+    expect(parseLength('7/16')).toBeCloseTo(11.1125, 4);
+    expect(parseLength('-1/4')).toBeCloseTo(-6.35, 4);
+    expect(parseLength('2.5')).toBeCloseTo(63.5, 4);
+    expect(parseLength('.5')).toBeCloseTo(12.7, 4);
+    expect(Number.isFinite(parseLength('1/0'))).toBe(false);
+    expect(parseLength('abc')).toBeNaN();
+    expect(formatLength(88.9)).toBe('3 1/2');
+    expect(formatLength(11.1125)).toBe('7/16');
+    expect(formatLength(50.8)).toBe('2');
+    expect(formatLength(-6.35)).toBe('-1/4');
+    expect(formatLength(120)).toBe('4.724');
+    expect(formatLength(0)).toBe('0');
+    setUnit('cm');
+    expect(formatLength(125)).toBe('12.5');
+    expect(parseLength('12,5')).toBeCloseTo(125, 6);
+    setUnit('mm');
+    expect(formatLength(88.9)).toBe('88.9');
   });
 });
 

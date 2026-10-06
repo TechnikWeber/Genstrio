@@ -141,3 +141,38 @@ export const ORGANIZER_TEMPLATES: Record<string, Params> = {
   smallParts: { drawerWidth: 300, drawerDepth: 400, height: 30, targetSize: 60, cornerRadius: 3, dividersY: 1 },
   bathroom: { drawerWidth: 400, drawerDepth: 350, height: 70, targetSize: 130, drain: 'holes', grip: 'frontback', cornerRadius: 10 },
 };
+
+export const GRIDFINITY_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  small: { unitsX: 1, unitsY: 1, unitsZ: 3 },
+  parts: { unitsX: 3, unitsY: 2, unitsZ: 3, divX: 2, divY: 1, scoop: 12, label: 'full' },
+  magnetic: { unitsX: 2, unitsY: 2, unitsZ: 6, baseHoles: 'magnets', baseHolesAt: 'corners' },
+  bits: { unitsX: 2, unitsY: 1, unitsZ: 3, fill: 'holes', holePreset: 'bit' },
+  batteries: { unitsX: 2, unitsY: 2, unitsZ: 4, fill: 'holes', holePreset: 'aa' },
+  plate: { kind: 'baseplate', plateX: 4, plateY: 4 },
+  plateMagnets: { kind: 'baseplate', plateX: 3, plateY: 3, plateMagnets: true, plateScrews: 'corners' },
+  // Fills a whole drawer, cut into plates that fit the printer
+  drawer: { kind: 'baseplate', plateSize: 'drawer', drawerWidth: 400, drawerDepth: 450 },
+};
+
+export const HOOK_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  coat: { width: 25, thickness: 7, reach: 45, tipHeight: 25, angle: 15, bend: 8, plateHeight: 80, plateThickness: 5 },
+  keys: { width: 10, thickness: 4, reach: 18, tipHeight: 10, angle: 20, bend: 3, plateHeight: 40, plateThickness: 4, count: 5, spacing: 35, screwCount: 2 },
+  broom: { type: 'cradle', width: 25, thickness: 5, diameter: 25, tipHeight: 4, plateHeight: 70 },
+  shelf: { type: 'bracket', width: 30, thickness: 6, reach: 120, tipHeight: 0, plateHeight: 110, plateThickness: 6, rib: 5 },
+  door: { mount: 'door', width: 25, thickness: 5, reach: 30, tipHeight: 20, plateHeight: 70, plateThickness: 3 },
+  pegboard: { mount: 'pegboard', width: 12, thickness: 5, reach: 40, tipHeight: 12, plateHeight: 45 },
+  towel: { mount: 'tape', width: 40, thickness: 5, reach: 25, tipHeight: 18, angle: 0, bend: 8, plateHeight: 60, plateThickness: 3 },
+};
+
+export const TEXT_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  keychain: { text: 'Keys', font: 'fredoka', size: 9, plateShape: 'pill', hole: 'left', plateThickness: 2, padding: 4 },
+  doorSign: { text: 'Workshop', font: 'zilla-slab', size: 18, border: 1.6, hole: 'both', padding: 8, cornerRadius: 5, plateThickness: 3 },
+  twoColour: { text: 'Hello', font: 'pacifico', size: 16, separate: true, plateShape: 'ellipse', textHeight: 0.8 },
+  stamp: { text: 'OK', font: 'bebas-neue', size: 14, mirror: true, textHeight: 2, plateThickness: 4, padding: 3 },
+  stencil: { text: 'FRAGILE', font: 'allerta-stencil', size: 25, style: 'cutout', plateThickness: 1.2, padding: 10 },
+  letters: { text: 'Home', font: 'pacifico', size: 30, style: 'letters', textHeight: 5, bar: false },
+  label: { text: 'M3 × 10\nM3 × 16', font: 'jetbrains-mono', size: 6, style: 'engraved', textHeight: 0.6, plateThickness: 1.6, padding: 3, cornerRadius: 1.5 },
+};

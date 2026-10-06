@@ -3,7 +3,7 @@ import type { ExportFormat, Request, Response } from './engine/protocol';
 import { GENERATOR_IDS, GENERATORS } from './generators/meta';
 import { defaults, fromTemplate, newItem, sanitize, type FieldDef, type GeneratorId, type ListParam, type Note, type Params, type Value } from './generators/types';
 import { getLang, setLang, t, type Lang } from './i18n';
-import { fromUnit, getUnit, setUnit, toUnit, unitStep, UNITS, type Unit } from './units';
+import { formatLength, fromUnit, getUnit, parseLength, setUnit, unitStep, UNITS, type Unit } from './units';
 import { Viewer } from './viewer';
 
 declare const __APP_VERSION__: string;
@@ -19,6 +19,12 @@ const ICONS: Record<GeneratorId, string> = {
     '<svg viewBox="0 0 24 24"><path d="M3 8h5l7-3h6M3 16h5l7 3h6M3 8v8M21 5v14M8 8v8M15 5v14"/></svg>',
   organizer:
     '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M10 3v9M15 12v9"/></svg>',
+  gridfinity:
+    '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>',
+  hook:
+    '<svg viewBox="0 0 24 24"><path d="M7 3v18M7 6h.01M7 18h.01"/><path d="M7 12h6a4 4 0 0 0 4-4V6"/></svg>',
+  text:
+    '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M8 9.5h8M12 9.5v6"/></svg>',
 };
 
 // --- state ------------------------------------------------------------------
@@ -256,7 +262,9 @@ function field(def: FieldDef, values: Params, id: string, key: string): HTMLElem
     select.addEventListener('change', () => update(select.value));
     row.append(el('label', { htmlFor: id, textContent: label }), select);
   } else if (def.type === 'text') {
-    const input = el('input', { type: 'text', id, value: values[def.key] as string, maxLength: 80, spellcheck: false });
+    const input = def.lines
+      ? el('textarea', { id, value: values[def.key] as string, maxLength: def.maxLength ?? 80, rows: 3, spellcheck: false })
+      : el('input', { type: 'text', id, value: values[def.key] as string, maxLength: def.maxLength ?? 80, spellcheck: false });
     input.addEventListener('input', () => {
       const ok = new RegExp(def.pattern).test(input.value);
       input.classList.toggle('invalid', !ok);
@@ -265,12 +273,13 @@ function field(def: FieldDef, values: Params, id: string, key: string): HTMLElem
     row.append(el('label', { htmlFor: id, textContent: label }), input);
   } else {
     const range = el('input', { type: 'range', min: String(def.min), max: String(def.sliderMax ?? def.max), step: String(def.step), tabIndex: -1 });
-    // Lengths are kept in mm and shown in the chosen unit.
+    // Lengths are kept in mm and shown in the chosen unit; inches may be typed as fractions.
     const length = def.unit === 'mm';
-    const shown = (v: number) => String(length ? toUnit(v) : v);
-    const number = el('input', { type: 'number', id, step: String(length ? unitStep(def.step) : def.step) });
-    // In inches the limits are odd numbers the arrow keys would step from, so they are only enforced below.
-    if (!length || getUnit() !== 'in') Object.assign(number, { min: shown(def.min), max: shown(def.max) });
+    const inches = length && getUnit() === 'in';
+    const shown = (v: number) => (length ? formatLength(v) : String(v));
+    const read = () => (inches ? parseLength(number.value) : length ? fromUnit(number.valueAsNumber) : number.valueAsNumber);
+    const number = el('input', { type: inches ? 'text' : 'number', id, step: String(length ? unitStep(def.step) : def.step) });
+    if (!inches) Object.assign(number, { min: shown(def.min), max: shown(def.max) });
     range.value = String(values[def.key]);
     number.value = shown(values[def.key] as number);
     range.setAttribute('aria-hidden', 'true');
@@ -278,13 +287,29 @@ function field(def: FieldDef, values: Params, id: string, key: string): HTMLElem
       number.value = shown(range.valueAsNumber);
       update(range.valueAsNumber);
     });
-    number.addEventListener('input', () => {
-      if (!Number.isFinite(number.valueAsNumber)) return;
-      const v = Math.min(def.max, Math.max(def.min, length ? fromUnit(number.valueAsNumber) : number.valueAsNumber));
+    const typed = () => {
+      const raw = read();
+      number.classList.toggle('invalid', inches && !Number.isFinite(raw));
+      if (!Number.isFinite(raw)) return;
+      const v = Math.min(def.max, Math.max(def.min, raw));
       range.value = String(v);
       update(v);
+    };
+    number.addEventListener('input', typed);
+    // A text field has no arrows of its own.
+    if (inches) {
+      number.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        const mm = Math.min(def.max, Math.max(def.min, (values[def.key] as number) + (event.key === 'ArrowUp' ? 1 : -1) * unitStep(def.step) * 25.4));
+        number.value = shown(mm);
+        typed();
+      });
+    }
+    number.addEventListener('blur', () => {
+      number.value = shown(values[def.key] as number);
+      number.classList.remove('invalid');
     });
-    number.addEventListener('blur', () => (number.value = shown(values[def.key] as number)));
     const dice = el('button', { type: 'button', className: 'ghost dice', textContent: t('app.reroll') });
     dice.addEventListener('click', () => {
       let v = values[def.key] as number;

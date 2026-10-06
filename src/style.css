@@ -223,6 +223,23 @@ input[type='text'] {
   min-width: 0;
 }
 
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  min-width: 0;
+  resize: vertical;
+}
+
+.num input[type='text'] {
+  width: 5.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 input.invalid {
   border-color: var(--error);
 }

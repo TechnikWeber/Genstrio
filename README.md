@@ -17,6 +17,9 @@ The interface is in English; the **DE** button in the header switches to German.
 | **Electronics enclosure** | Rectangular, round or polygonal (3–12 sides) box, with or without lid. **Templates** for Raspberry Pi 3/4/5, Zero and Pico, Arduino Uno and Mega, Adafruit Feather, ESP32 DevKit and BeagleBone place the standoffs on the board's hole pattern and cut the openings for its connectors; every value stays editable. PCB standoffs and lid screws are sized independently (M2–M5), as self-tapping pilot holes or heat-set insert holes; lid screws can be countersunk or counterbored. The lid can instead snap on, twist-lock (round bodies), or just push on, and can be hinged with a pin hinge. Optional gasket groove, mounting ears (side, spacing and offset adjustable) and a DIN rail clip on any wall or under the floor. Any number of openings on walls, lid or floor: connectors (USB-C, Micro-USB, USB-A single and stacked, USB-B, HDMI, Mini/Micro-HDMI, RJ45, DC jack, SD slot), round holes with presets for antennas, LEDs, switches and buttons, cable glands (M12–M40, PG7–PG21, optionally with printed thread), speakers (20–77 mm) and fans (25–120 mm) behind a guard of holes, honeycomb, grid, slots or triangles, or fully open. Ventilation is set separately for lid, walls and floor. |
 | **Pipe adapter** | Reducer between two pipes, hoses or threads. Each end is either a free diameter that plugs into its counterpart or slides over it (the diameter you enter always stays the mating surface, the wall grows away from it), or a standard size: garden hoses 1/2″–1 1/4″, G pipe threads 1/4″–1″ male or female, HT drain pipe DN 32–110, PVC pipe, vacuum and dust extraction ports. Templates cover hose joiners, tap and thread adapters, vacuum adapters, drain reducers and wall flanges. Hose barbs with count, height and spacing set per end, lead-in chamfers, a printable transition cone, an optional elbow of up to 180° and an optional mounting flange with bolt holes. |
 | **Drawer organizer** | Splits a drawer into boxes that fill it without gaps and fit your print bed, starting from templates for typical kitchen, desk, workshop and bathroom drawers: equal boxes, mixed sizes from ratios you type in (e.g. `2, 1, 1`), or a random mix of small and large boxes that you can roll again until you like it. Each box can have dividers (full or reduced height), finger notches in the rim, drain openings in the floor and a label ledge. |
+| **Gridfinity** | Bins and baseplates on the 42 mm [Gridfinity](https://gridfinity.xyz) grid. Bins from 1 × 1 to 10 × 10 units with or without stacking lip, any number of compartments, lowered dividers, a scoop at the front, label ledges (full width, left, centred or right), adjustable wall and floor, and magnet and/or M3 screw holes in the corners or in every foot. Instead of an open bin you can make a **holder** with a field of pockets – for hex bits, AAA/AA/18650 cells, pens or any round, hexagonal or square size – or a solid block. Baseplates as an open frame or with a floor, magnet holes and countersunk holes to screw them down. Enter the **inside size of a drawer** and the plate fills it completely: the grid is centred or pushed to a side, the leftover becomes a solid rim, and plates larger than your print bed are split into pieces that fit. |
+| **Hooks & brackets** | Wall hooks (reach, upturned tip, upward slope and bend radius adjustable), cradles fitted to the diameter of a handle or pipe, shelf brackets with a supporting rib and holes for the shelf, and rails with up to ten hooks. Fastened with screws (countersunk or plain), adhesive tape, hung over a door of any thickness, or hooked into a pegboard. Single hooks come out lying on their side, so the layers run along the arm. |
+| **Text & signs** | Signs, labels, key tags, stamps, stencils and loose lettering from one or more lines of text, in nine fonts. Text raised on a plate, engraved into it, cut through, or as letters alone with a bar that joins them. Rectangular, pill-shaped or elliptical plate with a raised border, holes for a key ring or screws, mirrored text for stamps, and the text as a separate part for printing in a second colour. |
 
 More generators are planned, see [Roadmap](#roadmap).
 
@@ -60,7 +63,7 @@ Set `GENSTRIO_PORT` to use a port other than 4173.
 - **3MF** contains each part as a separate object.
 - **STEP** contains the exact CAD geometry, for further editing in FreeCAD, Fusion and the like.
 
-Dimensions can be shown and entered in millimetres, centimetres or inches (selector at the top of the panel); exported files are always in millimetres. If a model has several parts, the selector below the export buttons lets you download just one of them, for example only the lid. The drawer organizer exports each box size once; the app tells you how many to print.
+Dimensions can be shown and entered in millimetres, centimetres or inches (selector at the top of the panel; inches also as fractions such as `3 1/2`); exported files are always in millimetres. If a model has several parts, the selector below the export buttons lets you download just one of them, for example only the lid. The drawer organizer exports each box size once; the app tells you how many to print.
 
 ## Saving your work
 
@@ -92,10 +95,12 @@ To add a generator, declare its parameters in `meta.ts`, write a build function,
 - More board templates, including the connector cutouts of BeagleBone and other single-board computers
 - Print-in-place hinges and latches
 - More fittings: pipe clamps, T-pieces, hose couplings
-- Further generators: gears, text and QR codes in 3D, logo reliefs, cookie cutters
+- Further generators: gears, QR codes in 3D, logo reliefs, cookie cutters
 
 ## License
 
 [AGPL-3.0-or-later](LICENSE). The models you generate are yours, without restriction.
 
 Genstrio builds on [replicad](https://github.com/sgenoud/replicad) (MIT), [OpenCascade](https://dev.opencascade.org) (LGPL-2.1), [three.js](https://threejs.org) (MIT) and [fflate](https://github.com/101arrowz/fflate) (MIT).
+
+The fonts of the text generator – Inter, Fredoka, Oswald, Bebas Neue, Zilla Slab, Playfair Display, JetBrains Mono, Pacifico and Allerta Stencil – are licensed under the [SIL Open Font License 1.1](https://openfontlicense.org), which allows free use, also commercially, in anything you make with them. The font files and their licence texts are in [`src/fonts`](src/fonts).

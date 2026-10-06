@@ -1,8 +1,8 @@
 /// <reference lib="webworker" />
 import opencascade from 'replicad-opencascadejs';
 import wasmUrl from 'replicad-opencascadejs/wasm?url';
-import { exportSTEP, makeCompound, setOC } from 'replicad';
-import { BUILDERS, ParamError, type BuildResult, type Part } from '../generators/build';
+import { exportSTEP, loadFont, makeCompound, setOC } from 'replicad';
+import { BUILDERS, loadedFonts, ParamError, type BuildResult, type Part } from '../generators/build';
 import type { GeneratorId, Params } from '../generators/types';
 import { meshPart, write3mf } from './export';
 import type { ExportFormat, PartMesh, Request, Response } from './protocol';
@@ -13,6 +13,17 @@ const ready = (opencascade as unknown as (o: object) => Promise<never>)({ locate
   setOC(oc);
   send({ type: 'ready' });
 });
+
+const fontUrls = import.meta.glob<string>('../fonts/*.woff', { query: '?url', import: 'default', eager: true });
+
+/** The text generator needs its font before it can build. */
+async function prepare(generator: GeneratorId, params: Params) {
+  const font = String(params.font);
+  const url = fontUrls[`../fonts/${font}.woff`];
+  if (generator !== 'text' || !url || loadedFonts.has(font)) return;
+  await loadFont(new URL(url, import.meta.url).href, font);
+  loadedFonts.add(font);
+}
 
 let latestBuild = 0;
 let cache: { key: string; result: BuildResult } | null = null;
@@ -98,6 +109,8 @@ self.onmessage = async (event: MessageEvent<Request>) => {
   await ready;
   if (req.type === 'build' && req.id !== latestBuild) return;
   try {
+    await prepare(req.generator, req.params);
+    if (req.type === 'build' && req.id !== latestBuild) return;
     if (req.type === 'build') await build(req.id, req.generator, req.params);
     else await exportFile(req.id, req.generator, req.params, req.format, req.only);
   } catch (err) {
