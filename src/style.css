@@ -20,7 +20,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #11171e;
     --panel: #16202b;
     --raised: #1d2936;
@@ -36,6 +36,29 @@
     --grid: #223040;
     --grid-strong: #33475c;
   }
+}
+
+/* The same colours when dark is chosen in the settings, whatever the system says */
+:root[data-theme='dark'] {
+  --bg: #11171e;
+  --panel: #16202b;
+  --raised: #1d2936;
+  --line: #2b3a4a;
+  --text: #e9e6df;
+  --muted: #94a0ae;
+  --accent: #ff8a3d;
+  --accent-text: #1a1206;
+  --warn: #f0b860;
+  --error: #ff8f85;
+  --model: #f09a52;
+  --model-edge: #2a1a0c;
+  --grid: #223040;
+  --grid-strong: #33475c;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 * {
@@ -218,6 +241,20 @@ h1 {
 #settings label {
   margin-top: 6px;
   font-size: 0.9rem;
+}
+
+#settings input {
+  font: inherit;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+#settings small {
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 #settings-close {

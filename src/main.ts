@@ -34,6 +34,8 @@ const ICONS: Record<GeneratorId, string> = {
     '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="M12 7.5l1.4 3 3.2.4-2.4 2.2.7 3.2L12 14.7l-2.9 1.6.7-3.2-2.4-2.2 3.2-.4z"/></svg>',
   cutter:
     '<svg viewBox="0 0 24 24"><path d="M12 20.5s-8-4.6-8-10.4A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 8 2.1c0 5.8-8 10.4-8 10.4z"/><path d="M12 16.5s-4.5-2.7-4.5-6"/></svg>',
+  hinge:
+    '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="7.5" height="14" rx="1.5"/><rect x="14" y="5" width="7.5" height="14" rx="1.5"/><path d="M12 4v16M10 8h4M10 12h4M10 16h4M6 9v.01M6 15v.01M18 9v.01M18 15v.01"/></svg>',
   lithophane:
     '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M3.5 17.5l5-5 3.5 3.5 3-3 5.5 5"/></svg>',
 };
@@ -51,7 +53,14 @@ interface Saved {
   open?: Record<string, boolean>;
   /** Templates the user saved, by generator and name. */
   templates?: Partial<Record<GeneratorId, Record<string, Record<string, unknown>>>>;
+  theme?: Theme;
+  /** Longest side the printer can print, in mm. */
+  bed?: number;
+  /** Extra gap for parts that have to fit, in mm: what this printer needs on top of the usual. */
+  fit?: number;
 }
+
+type Theme = 'auto' | 'light' | 'dark';
 
 function load(): Saved {
   try {
@@ -92,13 +101,30 @@ if (UNITS.includes(saved.unit as Unit)) setUnit(saved.unit as Unit);
 let notesOpen = saved.notesOpen;
 
 let current: GeneratorId = GENERATOR_IDS.includes(saved.generator as GeneratorId) ? (saved.generator as GeneratorId) : 'enclosure';
+let theme: Theme = saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : 'auto';
+let bed = typeof saved.bed === 'number' && saved.bed >= 80 && saved.bed <= 600 ? saved.bed : 220;
+let fit = typeof saved.fit === 'number' && Math.abs(saved.fit) <= 0.5 ? saved.fit : 0;
+
+/** Values that follow the print bed take its size, unless `given` sets them. */
+function withBed(id: GeneratorId, values: Params, given: Record<string, unknown> = {}): Params {
+  for (const def of GENERATORS[id].params) if (def.type === 'number' && def.bed && !(def.key in given)) values[def.key] = Math.min(def.max, Math.max(def.min, bed));
+  return values;
+}
+
+/** The values a model is built from: gaps between fitting parts get the allowance for this printer. */
+function effective(): Params {
+  const values = { ...params[current] };
+  if (fit) for (const def of GENERATORS[current].params) if (def.type === 'number' && def.fit) values[def.key] = Math.min(def.max, Math.max(def.min, Math.round(((values[def.key] as number) + fit) * 1000) / 1000));
+  return values;
+}
+
 const params = Object.fromEntries(
-  GENERATOR_IDS.map((id) => [id, sanitize(GENERATORS[id], { ...defaults(GENERATORS[id]), ...saved.params?.[id] })]),
+  GENERATOR_IDS.map((id) => [id, withBed(id, sanitize(GENERATORS[id], { ...defaults(GENERATORS[id]), ...saved.params?.[id] }), saved.params?.[id])]),
 ) as Record<GeneratorId, Params>;
 
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, unit: getUnit(), notesOpen, params, open: openGroups, templates: userTemplates }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ generator: current, lang: langChosen ? getLang() : undefined, unit: getUnit(), notesOpen, theme, bed, fit, params, open: openGroups, templates: userTemplates }));
   } catch {
     // Private mode or blocked storage: the app works without persistence.
   }
@@ -120,6 +146,9 @@ const notesEl = $('#notes');
 const notesBox = $<HTMLDetailsElement>('#notes-box');
 const unitEl = $<HTMLSelectElement>('#unit');
 const langEl = $<HTMLSelectElement>('#lang');
+const themeEl = $<HTMLSelectElement>('#theme');
+const bedEl = $<HTMLInputElement>('#bed');
+const fitEl = $<HTMLInputElement>('#fit');
 const settingsEl = $<HTMLDialogElement>('#settings');
 const homeEl = $('#home');
 const appEl = $('#app');
@@ -163,6 +192,8 @@ function renderNotes() {
   const items = [
     ...(lastNotes.error ? [el('li', { className: 'error', textContent: t(lastNotes.error) })] : []),
     ...lastNotes.notes.map((n) => el('li', { className: n.level, textContent: t(n.key, n.vars) })),
+    // The gaps are wider or narrower than the fields say: tell where that comes from.
+    ...(fit && !lastNotes.error && GENERATORS[current].params.some((def) => def.type === 'number' && def.fit) ? [el('li', { className: 'info', textContent: t('note.allowance', { d: `${fit > 0 ? '+' : '−'}${Math.abs(fit).toLocaleString(getLang())}` }) })] : []),
   ];
   notesEl.replaceChildren(...items);
   notesBox.hidden = !items.length;
@@ -178,7 +209,7 @@ $('#notes-label').addEventListener('click', () => {
 
 function rebuild() {
   buildId = ++requestId;
-  post({ type: 'build', id: buildId, generator: current, params: params[current] });
+  post({ type: 'build', id: buildId, generator: current, params: effective() });
   if (engineReady) statusEl.classList.add('busy');
 }
 
@@ -243,7 +274,7 @@ function startExport(format: ExportFormat) {
   setExporting(true);
   statusBeforeExport = lastStatus;
   setStatus('app.exporting', true, { format: format.toUpperCase() });
-  post({ type: 'export', id: ++requestId, generator: current, params: params[current], format, only: onlyEl.value || undefined });
+  post({ type: 'export', id: ++requestId, generator: current, params: effective(), format, only: onlyEl.value || undefined });
 }
 
 // --- parameter form ---------------------------------------------------------
@@ -486,6 +517,12 @@ function renderChrome() {
   $('#lang-label').textContent = t('app.language');
   $('#unit-label').textContent = t('app.unit');
   $('#settings-close').textContent = t('app.close');
+  $('#theme-label').textContent = t('app.theme');
+  for (const option of themeEl.options) option.textContent = t(`app.theme.${option.value}`);
+  $('#bed-label').textContent = t('app.bed');
+  $('#bed-hint').textContent = t('app.bedHint');
+  $('#fit-label').textContent = t('app.allowance');
+  $('#fit-hint').textContent = t('app.allowanceHint');
   for (const button of document.querySelectorAll<HTMLButtonElement>('.settings-open')) {
     button.title = t('app.settings');
     button.setAttribute('aria-label', t('app.settings'));
@@ -592,7 +629,7 @@ templateEl.addEventListener('change', () => {
   $<HTMLButtonElement>('#tpl-delete').disabled = !name.startsWith(USER);
   if (!name) return;
   const mine = userTemplates[current]?.[name.slice(USER.length)];
-  params[current] = name.startsWith(USER) && mine ? sanitize(GENERATORS[current], structuredClone(mine)) : fromTemplate(GENERATORS[current], name);
+  params[current] = name.startsWith(USER) && mine ? sanitize(GENERATORS[current], structuredClone(mine)) : withBed(current, fromTemplate(GENERATORS[current], name), GENERATORS[current].templates?.[name]);
   fitPending = true;
   renderForm();
   scheduleRebuild();
@@ -645,7 +682,7 @@ shareEl.addEventListener('click', async () => {
   setTimeout(() => (shareEl.textContent = t('app.share')), 2500);
 });
 $('#reset').addEventListener('click', () => {
-  params[current] = defaults(GENERATORS[current]);
+  params[current] = withBed(current, defaults(GENERATORS[current]));
   renderTemplates();
   fitPending = true;
   renderForm();
@@ -659,6 +696,36 @@ unitEl.addEventListener('change', () => {
   renderForm();
   renderNotes();
   renderStatus();
+});
+function applyTheme() {
+  if (theme === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  viewer.applyTheme();
+}
+themeEl.value = theme;
+applyTheme();
+themeEl.addEventListener('change', () => {
+  theme = themeEl.value as Theme;
+  applyTheme();
+  save();
+});
+bedEl.value = String(bed);
+bedEl.addEventListener('change', () => {
+  if (!bedEl.checkValidity() || !Number.isFinite(bedEl.valueAsNumber)) return void (bedEl.value = String(bed));
+  bed = bedEl.valueAsNumber;
+  // Every generator that cuts to the bed follows.
+  for (const id of GENERATOR_IDS) withBed(id, params[id]);
+  save();
+  renderForm();
+  if (!atHome) scheduleRebuild();
+});
+fitEl.value = String(fit);
+fitEl.addEventListener('change', () => {
+  if (!fitEl.checkValidity() || !Number.isFinite(fitEl.valueAsNumber)) return void (fitEl.value = String(fit));
+  fit = fitEl.valueAsNumber;
+  save();
+  renderNotes();
+  if (!atHome) scheduleRebuild();
 });
 langEl.addEventListener('change', () => {
   setLang(langEl.value as Lang);

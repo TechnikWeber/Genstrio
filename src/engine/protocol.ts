@@ -12,7 +12,7 @@ export interface PartMesh {
   shade?: Float32Array;
   /** x, y, z and optionally a turn about Z in degrees. */
   instances: ([number, number, number] | [number, number, number, number])[];
-  assembled?: { flip: boolean; offset: [number, number, number] };
+  assembled?: { flip: boolean; offset: [number, number, number]; places?: ([number, number, number] | [number, number, number, number])[] };
 }
 
 export type Request =

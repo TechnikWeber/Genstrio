@@ -124,7 +124,7 @@ export class Viewer {
       const edges = new THREE.BufferGeometry();
       edges.setAttribute('position', new THREE.BufferAttribute(part.edges, 3));
       const fitted = this.assembled ? part.assembled : undefined;
-      for (const [x, y, z, turn = 0] of fitted ? [fitted.offset] : part.instances) {
+      for (const [x, y, z, turn = 0] of fitted ? (fitted.places ?? [fitted.offset]) : part.instances) {
         const mesh = new THREE.Mesh(geometry, part.shade ? this.pictureMaterial : this.material);
         const lines = new THREE.LineSegments(edges, this.edgeMaterial);
         for (const object of [mesh, lines]) {

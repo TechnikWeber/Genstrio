@@ -1,6 +1,8 @@
 import { decodeImage } from '../image';
 import type { Note } from '../types';
-import { ParamError, round1, type Build, type TriMesh } from './common';
+import type { Shape3D } from 'replicad';
+import { ParamError, round1, type Build, type Part, type TriMesh } from './common';
+import { buildMount, buildStand } from './lithoholder';
 import { samplePhoto } from './trace';
 
 export interface LithophaneParams {
@@ -13,6 +15,12 @@ export interface LithophaneParams {
   minThickness: number;
   maxThickness: number;
   border: number;
+  stand: 'none' | 'base' | 'light';
+  lightDiameter: number;
+  lightThickness: number;
+  lightTilt: number;
+  lightDistance: number;
+  mount: 'none' | 'e27' | 'e14';
 }
 
 // A nozzle draws lines about this wide; a finer mesh would only make the file bigger.
@@ -49,7 +57,7 @@ function resample(src: Picture, width: number, height: number): Picture {
  * a lamp shade. One vertex per pixel on the picture side; the smooth back
  * only has vertices along its rim.
  */
-export function lithophaneMesh(p: LithophaneParams, source: Picture): { mesh: TriMesh; width: number; height: number; pitch: number } {
+export function lithophaneMesh(p: LithophaneParams, source: Picture): { mesh: TriMesh; width: number; height: number; pitch: number; radius: number; thick: number } {
   const wrap = p.form === 'cylinder';
   // As many columns as the print can show, but never fewer than the picture has.
   const span = wrap ? Math.PI * p.diameter : p.width - 2 * p.border;
@@ -144,7 +152,7 @@ export function lithophaneMesh(p: LithophaneParams, source: Picture): { mesh: Tr
       tri(back(nx - 1, j), front(nx - 1, j), front(nx - 1, j + 1));
     }
   }
-  return { mesh: { vertices, triangles: triangles.subarray(0, n), shade }, width, height, pitch };
+  return { mesh: { vertices, triangles: triangles.subarray(0, n), shade }, width, height, pitch, radius, thick };
 }
 
 export function* buildLithophane(p: LithophaneParams): Build {
@@ -153,9 +161,25 @@ export function* buildLithophane(p: LithophaneParams): Build {
   if (!picture || picture.width < 8 || picture.height < 8) throw new ParamError('err.noImage');
   if (!p.image) notes.push({ level: 'info', key: 'note.lithoSample' });
   if (p.form !== 'cylinder' && p.width - 2 * p.border < 10) throw new ParamError('err.lithoBorder');
-  const { mesh, width, height, pitch } = lithophaneMesh(p, picture);
+  const { mesh, width, height, pitch, radius, thick } = lithophaneMesh(p, picture);
   notes.push({ level: 'info', key: p.form === 'cylinder' ? 'note.lithoCylinder' : 'note.lithoSize', vars: { w: round1(width), h: round1(height), p: Math.round(pitch * 100) / 100 } });
   notes.push({ level: 'info', key: 'note.lithoPrint' });
   if (pitch > 0.6) notes.push({ level: 'info', key: 'note.lithoCoarse', vars: { p: Math.round(pitch * 100) / 100 } });
-  return { parts: [], meshes: [{ name: 'lithophane', mesh }], notes };
+
+  const parts: Part[] = [];
+  if (p.form === 'cylinder' && p.mount !== 'none') {
+    // Beside the cylinder for printing; fitted, it closes the top, collar down.
+    const at = p.diameter + 8;
+    parts.push({ name: 'mount', shape: buildMount(p.mount, p.diameter / 2, radius).translate([at, 0, 0]) as Shape3D, assembled: { flip: true, offset: [at, 0, height + 2] } });
+    notes.push({ level: 'info', key: 'note.lithoMount', vars: { d: p.mount === 'e27' ? 40.5 : 28.5 } });
+  }
+  if (p.form !== 'cylinder' && p.stand !== 'none') {
+    const stand = buildStand({ ...p, form: p.form, radius, foot: thick, light: p.stand === 'light' });
+    // Behind the lithophane for printing; fitted, it stands in the slot.
+    const reach = p.form === 'flat' ? 0 : p.angle <= 180 ? radius * (1 - Math.cos((p.angle * Math.PI) / 360)) : 2 * radius + thick;
+    const shift = reach + 10 - stand.shape.boundingBox.bounds[0][1];
+    parts.push({ name: 'stand', shape: stand.shape.translate([0, shift, 0]) as Shape3D, assembled: { flip: false, offset: [0, -shift, -stand.plate] } });
+    notes.push({ level: 'info', key: p.stand === 'light' ? 'note.lithoLight' : 'note.lithoStand' });
+  }
+  return { parts, meshes: [{ name: 'lithophane', mesh }], notes };
 }

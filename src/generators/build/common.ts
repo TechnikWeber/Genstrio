@@ -11,7 +11,7 @@ export interface Part {
   /** Positions at which the preview shows the part, optionally turned about Z by a fourth value in degrees. Exports contain it once. */
   instances?: Placement[];
   /** How the preview moves the part from its print position into the assembly: turned over about Y, then shifted. */
-  assembled?: { flip: boolean; offset: Vec3 };
+  assembled?: { flip: boolean; offset: Vec3; /** Several places for a part that is fitted more than once, each optionally turned about Z. */ places?: Placement[] };
 }
 
 /** Triangles with shared corners, for what a CAD solid would be too heavy for. */

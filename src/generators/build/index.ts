@@ -5,6 +5,7 @@ import { buildCutter } from './cutter';
 import { buildEnclosure } from './enclosure';
 import { buildGear } from './gear';
 import { buildGridfinity } from './gridfinity';
+import { buildHingeGenerator } from './hinge';
 import { buildHook } from './hook';
 import { buildLithophane } from './lithophane';
 import { buildOrganizer } from './organizer';
@@ -24,6 +25,7 @@ export const BUILDERS: Record<GeneratorId, (p: Params) => Build> = {
   relief: (p) => buildRelief(p as never),
   cutter: (p) => buildCutter(p as never),
   lithophane: (p) => buildLithophane(p as never),
+  hinge: (p) => buildHingeGenerator(p as never),
 };
 
 export * from './common';

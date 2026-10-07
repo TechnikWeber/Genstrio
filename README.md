@@ -8,7 +8,7 @@ Parametric generators for 3D printing. Enter a few dimensions, watch the model b
 
 Genstrio runs entirely in your browser: the geometry is computed locally by a real CAD kernel (OpenCascade compiled to WebAssembly). No account, no upload, no server-side processing – pictures you load for a relief, a cutter or a lithophane never leave your computer either.
 
-The start page asks what you would like to print; the house symbol leads back to it from any generator. The interface starts in English; language and unit of length are set behind the cog symbol.
+The start page asks what you would like to print; the house symbol leads back to it from any generator. The interface starts in English; language, unit of length, light or dark appearance, the size of your print bed and an allowance for fits are set behind the cog symbol.
 
 [![Genstrio with an electronics enclosure, its lid engraved with text](docs/images/enclosure.png)](docs/images/enclosure.png)
 
@@ -22,11 +22,12 @@ The start page asks what you would like to print; the house symbol leads back to
 | **Gridfinity** | Bins and baseplates on the 42 mm [Gridfinity](https://gridfinity.xyz) grid. Bins from 1 × 1 to 10 × 10 units with or without stacking lip, any number of compartments, lowered dividers, a scoop at the front, label ledges (full width, left, centred or right), adjustable wall and floor, and magnet and/or M3 screw holes in the corners or in every foot. Instead of an open bin you can make a **holder** with a field of pockets – for hex bits, AAA/AA/18650 cells, pens or any round, hexagonal or square size – or a solid block. Baseplates as an open frame or with a floor, magnet holes and countersunk holes to screw them down. Enter the **inside size of a drawer** and the plate fills it completely: the grid is centred or pushed to a side, the leftover becomes a solid rim, and plates larger than your print bed are split into pieces that fit; pieces that are the same after half a turn are built and exported only once. |
 | **Hooks & brackets** | Wall hooks (reach, upturned tip, upward slope and bend radius adjustable), cradles fitted to the diameter of a handle or pipe, shelf brackets with a supporting rib and holes for the shelf, and rails with up to ten hooks. Fastened with screws (countersunk or plain), adhesive tape, hung over a door of any thickness, or hooked into a pegboard. Single hooks come out lying on their side, so the layers run along the arm. |
 | **Text & signs** | Signs, labels, key tags, stamps, stencils and loose lettering from one or more lines of text, in nine fonts. Text raised on a plate, engraved into it, cut through, or as letters alone with a bar that joins them. Rectangular, pill-shaped or elliptical plate with a raised border, holes for a key ring or screws, mirrored text for stamps, and the text as a separate part for printing in a second colour. |
-| **Gears** | Involute gears by module, tooth count and pressure angle (14.5°, 20°, 25°): spur, helical or herringbone. Optionally with the matching mating gear straight away; the app states centre distance and ratio, and **Assembled** shows the gears in mesh. Bore round, with a flat for D shafts, hexagonal or square, plus a hub and adjustable backlash. Racks with the same pitch as well. |
+| **Gears** | Involute gears by module, tooth count and pressure angle (14.5°, 20°, 25°): spur, helical or herringbone. Optionally with the matching mating gear straight away; the app states centre distance and ratio, and **Assembled** shows the gears in mesh. Bore round, with a flat for D shafts, hexagonal or square, plus a hub and adjustable backlash. Also **ring gears** with internal teeth, complete **planetary sets** (sun, planets, ring and a carrier with pins; the app checks that the planets can be spaced evenly and states the ratio) and racks with the same pitch. |
 | **QR code** | QR codes for links, WiFi access or any text, raised on a plate or engraved into it, optionally as a separate part for a second colour. Error correction L to H, adjustable quiet zone, a hole for a key ring and a line of text below the code in any font of the text generator. The app states the module size and warns when it gets too fine for the nozzle. |
 | **Logo relief** | Load a logo or drawing as **SVG, PNG or JPG** (or take a built-in shape) and print it as a relief, an engraving, a stencil or a loose shape. The plate is rectangular, elliptical, or follows the outline of the motif like the edge of a sticker, with a lug for a key ring. Threshold, smoothing and “swap light and dark” decide what counts as shape; the motif mirrored for stamps and as a separate part for a second colour. |
-| **Cookie cutter** | Cutters for cookies, fondant or clay from the outline of a picture or a built-in shape (heart, star, flower, moon, circle). A wall of the same thickness all round, a narrow cutting edge on top, a grip rim below; the outline can be widened or narrowed. Lies ready to print on its grip rim. |
-| **Lithophane** | A photo as a relief that only becomes a picture against the light: a flat panel, curved (stands on its own) or a cylinder for a lamp shade. Thinnest and thickest spot, frame and negative are adjustable; the preview shows the picture the way it looks lit from behind. Exports as STL or 3MF. |
+| **Cookie cutter** | Cutters for cookies, fondant or clay from the outline of a picture or a built-in shape (heart, star, flower, moon, circle). A wall of the same thickness all round, a narrow cutting edge on top, a grip rim below; the outline can be widened or narrowed. Lies ready to print on its grip rim. For a picture of your own there is an optional **embossing stamp** that fits into the cutter and presses the lines or areas inside into the dough, with a plug-in grip. |
+| **Lithophane** | A photo as a relief that only becomes a picture against the light: a flat panel, curved (stands on its own) or a cylinder for a lamp shade. Thinnest and thickest spot, frame and negative are adjustable; the preview shows the picture the way it looks lit from behind. To go with it, a **base with a slot**, optionally with a tilted seat for a round battery light behind it (diameter, thickness, tilt and distance adjustable), and for the cylinder a **lid for E27 or E14 lamp holders**. Exports as STL or 3MF. |
+| **Hinges & bolts** | Hinges that come off the printer assembled: the knuckles hold on to each other with cones that print without supports, so no pin is needed. Length, leaf width, barrel, number of knuckles and play are adjustable, screw holes countersunk if wanted. Plus **sliding bolts** with a keeper, also printed in one piece. |
 
 ### Screenshots
 
@@ -40,12 +41,12 @@ The start page asks what you would like to print; the house symbol leads back to
 | Gridfinity bin with compartments, scoop and label ledges | Gridfinity baseplates that fill a drawer, split for the printer |
 | [![Hooks & brackets: a key rail](docs/images/hook.png)](docs/images/hook.png) | [![Text & signs: door sign with border and screw holes](docs/images/text.png)](docs/images/text.png) |
 | Hooks & brackets: a key rail | Text & signs: door sign with border and screw holes |
-| [![Gears: a herringbone pair in mesh](docs/images/gear.png)](docs/images/gear.png) | [![QR code with a label](docs/images/qr.png)](docs/images/qr.png) |
-| Gears: a herringbone pair in mesh | QR code with a label |
+| [![Gears: a planetary set, assembled](docs/images/gear.png)](docs/images/gear.png) | [![QR code with a label](docs/images/qr.png)](docs/images/qr.png) |
+| Gears: a planetary set, assembled | QR code with a label |
 | [![Logo relief from an SVG file](docs/images/relief.png)](docs/images/relief.png) | [![Cookie cutter from the outline of a heart](docs/images/cutter.png)](docs/images/cutter.png) |
-| Logo relief from an SVG file | Cookie cutter: heart |
-| [![Lithophane: curved panel](docs/images/lithophane.png)](docs/images/lithophane.png) | |
-| Lithophane: curved panel, the way it looks against the light | |
+| Logo relief from an SVG file | Cookie cutter with embossing stamp and grip |
+| [![Lithophane: curved panel in its base](docs/images/lithophane.png)](docs/images/lithophane.png) | [![A hinge that prints assembled](docs/images/hinge.png)](docs/images/hinge.png) |
+| Lithophane: curved panel in its base, the way it looks against the light | Hinges & bolts: prints assembled |
 
 What is planned next is in the [Roadmap](#roadmap).
 
@@ -121,10 +122,9 @@ To add a generator, declare its parameters in `meta.ts`, write a build function,
 ## Roadmap
 
 - More board templates, including the connector cutouts of BeagleBone and other single-board computers
-- Print-in-place hinges and latches
+- Hinges and bolts directly on the electronics enclosure
 - More fittings: pipe clamps, T-pieces, hose couplings
-- Gears: ring gears and planetary sets, bevel gears
-- Cookie cutters with a stamp for the lines inside
+- Gears: bevel gears and worm drives
 - Reliefs with a soft height gradient from greyscale pictures
 
 ## License

@@ -187,6 +187,10 @@ export const GEAR_TEMPLATES: Record<string, Params> = {
   // For a 5 mm motor shaft with a flat
   pinion: { module: 1, teeth: 14, thickness: 8, bore: 'd', boreDiameter: 5.1, boreFlat: 0.5, hubHeight: 6, hubDiameter: 10 },
   rack: { kind: 'rack', rackTeeth: 16, thickness: 8 },
+  ring: { kind: 'ring', teeth: 40, rim: 4 },
+  // Sun 14, three planets of 13, ring 40: one turn of the carrier for 3.86 of the sun
+  planetary: { kind: 'planetary', module: 1.5, teeth: 14, planetTeeth: 13, planets: 3, thickness: 8, bore: 'd', boreDiameter: 5.1 },
+  planetaryHerringbone: { kind: 'planetary', module: 1.5, teeth: 12, planetTeeth: 12, planets: 3, thickness: 10, helix: 20, herringbone: true },
 };
 
 export const QR_TEMPLATES: Record<string, Params> = {
@@ -225,4 +229,19 @@ export const LITHOPHANE_TEMPLATES: Record<string, Params> = {
   // A shade around a small lamp or an LED tea light
   lamp: { form: 'cylinder', diameter: 70, border: 3 },
   frame: { width: 150, border: 5, maxThickness: 3.2 },
+  stand: { width: 120, border: 3, stand: 'base' },
+  // Curved, with a seat behind it for a battery light of 68 mm
+  light: { form: 'arc', width: 140, angle: 110, border: 3, stand: 'light', lightDiameter: 68, lightThickness: 25, lightDistance: 50 },
+  lampE27: { form: 'cylinder', diameter: 90, border: 4, mount: 'e27' },
+  lampE14: { form: 'cylinder', diameter: 70, border: 4, mount: 'e14' },
+};
+
+export const HINGE_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  small: { length: 25, leafWidth: 12, thickness: 2.4, barrel: 6, knuckles: 3, holes: 1, holeDiameter: 3 },
+  // A long, narrow hinge for a lid or a flap
+  piano: { length: 120, leafWidth: 14, knuckles: 11, holes: 4 },
+  heavy: { length: 60, leafWidth: 28, thickness: 4, barrel: 12, knuckles: 5, holes: 3, holeDiameter: 4.5 },
+  bolt: { type: 'bolt', length: 55 },
+  boltLong: { type: 'bolt', length: 80, throw: 30, boltWidth: 14, holes: 3 },
 };

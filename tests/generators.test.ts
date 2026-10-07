@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import opencascade from 'replicad-opencascadejs';
-import { loadFont, makeBaseBox, measureVolume, setOC, type Shape3D } from 'replicad';
+import { loadFont, makeBaseBox, makeCylinder, measureVolume, setOC, type Shape3D } from 'replicad';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BUILDERS, loadedFonts, ParamError, type BuildResult, type Stage } from '../src/generators/build';
 import { FONTS } from '../src/generators/fonts';
@@ -868,6 +868,42 @@ describe('gear', () => {
     expect(t).toBeCloseTo(6, 3);
   });
 
+  it('cuts a ring gear from the inside', () => {
+    const { result } = run('gear', { kind: 'ring', teeth: 40, module: 1.5, rim: 4 });
+    const ring = result.parts[0].shape;
+    expect(ring.solids.length).toBe(1);
+    // Pitch Ø 60; the gaps reach 1.25 modules further out, then the rim
+    expect(size(ring)[0]).toBeCloseTo(60 + 2 * 1.875 + 8, 1);
+    expect(size(ring)[2]).toBeCloseTo(8, 3);
+    const outer = Math.PI * 35.875 ** 2 * 8;
+    expect(measureVolume(ring)).toBeGreaterThan(outer - Math.PI * 31.875 ** 2 * 8);
+    expect(measureVolume(ring)).toBeLessThan(outer - Math.PI * 28.5 ** 2 * 8);
+  });
+
+  it('builds a planetary set whose gears mesh', () => {
+    const { result } = run('gear', { kind: 'planetary', teeth: 14, planetTeeth: 13, planets: 3 });
+    expect(result.parts.map((part) => part.name)).toEqual(['sun', 'planet', 'ring', 'carrier']);
+    expect(result.notes.find((n) => n.key === 'note.planetary')?.vars).toMatchObject({ r: 40, i: 3.857 });
+    const fitted = (name: string, k = 0, extra = 0): Shape3D => {
+      const part = result.parts.find((candidate) => candidate.name === name)!;
+      const [x, y, z, turn = 0] = part.assembled!.places?.[k] ?? part.assembled!.offset;
+      return part.shape.clone().rotate(turn + extra, [0, 0, 0], [0, 0, 1]).translate([x, y, z]) as Shape3D;
+    };
+    for (let k = 0; k < 3; k++) {
+      expect(measureVolume(fitted('sun').intersect(fitted('planet', k))), `sun/${k}`).toBeLessThan(0.3);
+      expect(measureVolume(fitted('ring').intersect(fitted('planet', k))), `ring/${k}`).toBeLessThan(0.3);
+    }
+    expect(measureVolume(fitted('carrier').intersect(fitted('planet')))).toBeLessThan(0.01);
+    // Half a tooth further round, a planet would run into both.
+    expect(measureVolume(fitted('sun').intersect(fitted('planet', 1, 180 / 13)))).toBeGreaterThan(5);
+    expect(measureVolume(fitted('ring').intersect(fitted('planet', 1, 180 / 13)))).toBeGreaterThan(5);
+    // The planets are laid out side by side for printing, once in the file.
+    expect(result.parts[1].instances).toHaveLength(3);
+    expect(() => run('gear', { kind: 'planetary', teeth: 14, planetTeeth: 13, planets: 4 })).toThrow(ParamError);
+    expect(() => run('gear', { kind: 'planetary', teeth: 8, planetTeeth: 40, planets: 6 })).toThrow(ParamError);
+    expect(run('gear', { kind: 'planetary', teeth: 14, planetTeeth: 13, carrier: false }).result.parts).toHaveLength(3);
+  });
+
   it('builds every gear template cleanly', () => {
     for (const name of Object.keys(GENERATORS.gear.templates!)) {
       const { result } = run('gear', fromTemplate(GENERATORS.gear, name));
@@ -1153,6 +1189,49 @@ describe('cutter', () => {
     expect(warnings(two)).toEqual(['note.cutterPieces']);
   });
 
+  it('makes a stamp for what the picture shows inside the outline', () => {
+    // A face: a ring for the head, two eyes and a mouth, dark on white
+    const w = 160;
+    const data = new Uint8Array(w * w);
+    for (let y = 0; y < w; y++) {
+      for (let x = 0; x < w; x++) {
+        const r = Math.hypot(x - 80, y - 80);
+        const eye = Math.hypot(x - 55, y - 60) < 8 || Math.hypot(x - 105, y - 60) < 8;
+        if ((r < 70 && r > 62) || eye || (Math.abs(r - 38) < 4 && y > 95)) data[y * w + x] = 255;
+      }
+    }
+    const image = encodeImage({ width: w, height: w, data });
+    const face: Params = { shape: 'image', image, size: 70, flangeWidth: 4, stampClearance: 0.5, stampMargin: 5, stampPlate: 3, stampRelief: 2 };
+    const { result } = run('cutter', { ...face, stamp: 'lines' });
+    expect(warnings(result)).toEqual([]);
+    expect(result.parts.map((part) => part.name)).toEqual(['cutter', 'stamp', 'handle']);
+    const [cutter, stamp, handle] = result.parts.map((part) => part.shape);
+    expect(cutter.solids.length).toBe(1);
+    expect(stamp.solids.length).toBe(1);
+    // The plate drops into the cutter with play all round …
+    expect(size(stamp)[0]).toBeCloseTo(70 - 1, 0);
+    expect(size(stamp)[2]).toBeCloseTo(5, 3);
+    const [[x0], [x1]] = stamp.boundingBox.bounds;
+    const inPlace = stamp.clone().translate([-(x0 + x1) / 2, 0, 0]) as Shape3D;
+    expect(measureVolume(cutter.clone().intersect(inPlace))).toBeLessThan(0.01);
+    // … and carries eyes and mouth, but not the outline, which lies within the margin.
+    const plate = Math.PI * 34.5 ** 2 * 3;
+    const marks = (2 * Math.PI * 8 ** 2 + 0.36 * Math.PI * (42 ** 2 - 34 ** 2)) * (70 / 140) ** 2 * 2;
+    const socket = 8.3 ** 2 * 2.2;
+    expect(measureVolume(stamp)).toBeGreaterThan(plate - socket + marks * 0.7);
+    expect(measureVolume(stamp)).toBeLessThan(plate - socket + marks * 1.4);
+    // A knob with a peg slightly shorter than the socket is deep
+    expect(size(handle)[2]).toBeCloseTo(14 + 2, 1);
+    // The other kind raises everything but the lines.
+    const areas = run('cutter', { ...face, stamp: 'areas' }).result.parts[1].shape;
+    expect(measureVolume(areas)).toBeGreaterThan(measureVolume(stamp) + 1000);
+    expect(run('cutter', { ...face, stamp: 'lines', stampHandle: false }).result.parts).toHaveLength(2);
+    // Nothing inside a plain disc is dark, and a built-in shape has no picture to take lines from.
+    const disc = encodeImage(sampleMask('circle', 120));
+    expect(warnings(run('cutter', { shape: 'image', image: disc, stamp: 'areas' }).result)).toEqual(['note.stampEmpty']);
+    expect(run('cutter', { shape: 'heart', stamp: 'lines' }).result.parts).toHaveLength(1);
+  });
+
   it('builds every cutter template cleanly', () => {
     for (const name of Object.keys(GENERATORS.cutter.templates!)) {
       const { result } = run('cutter', fromTemplate(GENERATORS.cutter, name));
@@ -1264,6 +1343,53 @@ describe('lithophane', () => {
     expect(() => run('lithophane', { image: '4x4:AAAA' })).toThrow(ParamError);
   });
 
+  it('adds a base with a slot, and a seat for a battery light', () => {
+    const { result } = run('lithophane', { width: 100, border: 3, stand: 'base' });
+    expect(result.parts.map((part) => part.name)).toEqual(['stand']);
+    const stand = result.parts[0];
+    expect(stand.shape.solids.length).toBe(1);
+    // Fitted, its plate lies below the lithophane, which stands in the slot between two ribs.
+    const [, dy, dz] = stand.assembled!.offset;
+    const fitted = stand.shape.clone().translate([0, dy, dz]) as Shape3D;
+    expect(fitted.boundingBox.bounds[1][2]).toBeCloseTo(5, 2);
+    const foot = makeBaseBox(100, 3, 20).translate([0, -1.5, 0]) as Shape3D;
+    expect(measureVolume(fitted.clone().intersect(foot.clone()))).toBeLessThan(0.001);
+    for (const push of [-0.6, 0.6]) expect(measureVolume(fitted.clone().intersect(foot.clone().translate([0, push, 0]) as Shape3D)), String(push)).toBeGreaterThan(1);
+
+    const lit = run('lithophane', { form: 'arc', width: 140, angle: 110, border: 3, stand: 'light', lightDiameter: 68, lightThickness: 25, lightTilt: 15, lightDistance: 50 }).result;
+    const seat = lit.parts[0];
+    expect(seat.shape.solids.length).toBe(1);
+    expect(lit.notes.map((n) => n.key)).toContain('note.lithoLight');
+    // The light, a disc leaning back by 15°, fits its hollow without touching.
+    const [, sy, sz] = seat.assembled!.offset;
+    const base = seat.shape.clone().translate([0, sy, sz]) as Shape3D;
+    const tilt = (15 * Math.PI) / 180;
+    const light = (makeCylinder(34, 25, [0, 0, -12.5], [0, 0, 1]) as Shape3D).rotate(75, [0, 0, 0], [1, 0, 0]).translate([0, 50, 2 + 34 * Math.cos(tilt) + 12.5 * Math.sin(tilt)]) as Shape3D;
+    expect(measureVolume(base.clone().intersect(light.clone()))).toBeLessThan(0.001);
+    expect(measureVolume(base.clone().intersect(light.clone().translate([0, 0, -3]) as Shape3D))).toBeGreaterThan(10);
+    expect(() => run('lithophane', { form: 'arc', width: 30, angle: 270, stand: 'base' })).toThrow(ParamError);
+  });
+
+  it('closes a cylinder with a lid for an E27 or E14 lamp holder', () => {
+    for (const [mount, hole] of [['e27', 40.5], ['e14', 28.5]] as const) {
+      const { result } = run('lithophane', { form: 'cylinder', diameter: 90, mount });
+      expect(result.meshes).toHaveLength(1);
+      const lid = result.parts[0];
+      expect(lid.name).toBe('mount');
+      expect(lid.shape.solids.length).toBe(1);
+      const [[x0], [x1]] = lid.shape.boundingBox.bounds;
+      expect(x1 - x0).toBeCloseTo(90, 1);
+      // Beside the cylinder for printing, so the two do not overlap in the file
+      expect(x0).toBeGreaterThan(45);
+      const centred = lid.shape.clone().translate([-(x0 + x1) / 2, 0, 0]) as Shape3D;
+      const through = (d: number) => measureVolume(centred.clone().intersect(makeCylinder(d / 2, 20, [0, 0, -5], [0, 0, 1]) as Shape3D));
+      expect(through(hole - 0.2), mount).toBeLessThan(0.001);
+      expect(through(hole + 2), mount).toBeGreaterThan(10);
+      expect(lid.assembled!.flip).toBe(true);
+    }
+    expect(() => run('lithophane', { form: 'cylinder', diameter: 50, mount: 'e27' })).toThrow(ParamError);
+  });
+
   it('writes its mesh as STL and 3MF', () => {
     const { mesh } = run('lithophane').result.meshes![0];
     const stl = writeStl([mesh]);
@@ -1277,6 +1403,71 @@ describe('lithophane', () => {
     for (const name of Object.keys(GENERATORS.lithophane.templates!)) {
       const { result } = run('lithophane', fromTemplate(GENERATORS.lithophane, name));
       expect(openEdges(result.meshes![0].mesh), name).toBe(0);
+    }
+  });
+});
+
+describe('hinge', () => {
+  const pair = (shape: Shape3D) => shape.solids.map((solid) => solid as Shape3D);
+
+  it('prints a hinge in place whose leaves turn freely', () => {
+    const { result } = run('hinge');
+    expect(warnings(result)).toEqual([]);
+    const hinge = result.parts[0].shape;
+    expect(hinge.solids.length).toBe(2);
+    const [l, w, h] = size(hinge);
+    expect(l).toBeCloseTo(40, 2);
+    expect(w).toBeCloseTo(2 * (4 + 18), 2);
+    expect(h).toBeCloseTo(8, 2);
+    expect(hinge.boundingBox.bounds[0][2]).toBeCloseTo(0, 3);
+    const [a, b] = pair(hinge);
+    expect(measureVolume(a.clone().intersect(b.clone()))).toBeLessThan(0.001);
+    // Swung up, and folded right over onto the other leaf: still nothing collides.
+    for (const angle of [45, 90, 135, 180]) {
+      const turned = b.clone().rotate(angle, [0, 0, 4], [1, 0, 0]) as Shape3D;
+      expect(measureVolume(a.clone().intersect(turned)), String(angle)).toBeLessThan(0.001);
+    }
+    // But the knuckles hold on to each other: pulled along the axis or apart, the leaves collide.
+    expect(measureVolume(a.clone().intersect(b.clone().translate([2, 0, 0]) as Shape3D))).toBeGreaterThan(1);
+    expect(measureVolume(a.clone().intersect(b.clone().translate([0, 2, 0]) as Shape3D))).toBeGreaterThan(1);
+  });
+
+  it('cuts screw holes and refuses what cannot work', () => {
+    const plain = measureVolume(run('hinge', { holes: 0 }).result.parts[0].shape);
+    const drilled = measureVolume(run('hinge', { holes: 2, holeDiameter: 4, countersunk: false }).result.parts[0].shape);
+    expect(plain - drilled).toBeCloseTo(4 * Math.PI * 4 * 3, 0);
+    expect(measureVolume(run('hinge', { holes: 2, holeDiameter: 4, countersunk: true }).result.parts[0].shape)).toBeLessThan(drilled - 20);
+    expect(() => run('hinge', { length: 20, knuckles: 9 })).toThrow(ParamError);
+    expect(run('hinge', { clearance: 0.15 }).result.notes.map((n) => n.key)).toContain('note.tightFit');
+  });
+
+  it('prints a sliding bolt in place, with its keeper', () => {
+    const { result } = run('hinge', { type: 'bolt', length: 55, throw: 15 });
+    expect(result.parts.map((part) => part.name)).toEqual(['bolt', 'keeper']);
+    const [housing, bolt] = pair(result.parts[0].shape);
+    const keeper = result.parts[1].shape;
+    expect(result.parts[0].shape.solids.length).toBe(2);
+    expect(keeper.solids.length).toBe(1);
+    expect(measureVolume(housing.clone().intersect(bolt.clone()))).toBeLessThan(0.001);
+    // It slides out by its throw, into the keeper, and no further.
+    const out = bolt.clone().translate([15, 0, 0]) as Shape3D;
+    expect(measureVolume(housing.clone().intersect(out.clone()))).toBeLessThan(0.001);
+    expect(measureVolume(keeper.clone().intersect(out.clone()))).toBeLessThan(0.001);
+    expect(out.boundingBox.bounds[1][0]).toBeGreaterThan(keeper.boundingBox.bounds[0][0] + 10);
+    expect(measureVolume(housing.clone().intersect(bolt.clone().translate([17, 0, 0]) as Shape3D))).toBeGreaterThan(1);
+    expect(measureVolume(housing.clone().intersect(bolt.clone().translate([-2, 0, 0]) as Shape3D))).toBeGreaterThan(1);
+    // The channel narrows towards the top: the bolt cannot be lifted out.
+    expect(measureVolume(housing.clone().intersect(bolt.clone().translate([0, 0, 2]) as Shape3D))).toBeGreaterThan(1);
+    expect(() => run('hinge', { type: 'bolt', length: 30, throw: 40 })).toThrow(ParamError);
+    expect(() => run('hinge', { type: 'bolt', boltWidth: 8, boltHeight: 8 })).toThrow(ParamError);
+  });
+
+  it('builds every hinge template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.hinge.templates!)) {
+      const { result } = run('hinge', fromTemplate(GENERATORS.hinge, name));
+      expect(warnings(result), name).toEqual([]);
+      const [a, b] = pair(result.parts[0].shape);
+      expect(measureVolume(a.clone().intersect(b.clone())), name).toBeLessThan(0.001);
     }
   });
 });

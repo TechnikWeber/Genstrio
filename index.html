@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="description" content="Parametric generators for 3D printing: enclosures, pipe adapters, drawer organizers, Gridfinity, hooks, signs, gears, QR codes, logo reliefs, cookie cutters and lithophanes. Runs entirely in your browser." />
+    <meta name="description" content="Parametric generators for 3D printing: enclosures, pipe adapters, drawer organizers, Gridfinity, hooks, signs, gears, QR codes, logo reliefs, cookie cutters, lithophanes, hinges and bolts. Runs entirely in your browser." />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>Genstrio</title>
@@ -33,6 +33,18 @@
         </select>
         <label for="unit" id="unit-label"></label>
         <select id="unit"></select>
+        <label for="theme" id="theme-label"></label>
+        <select id="theme">
+          <option value="auto"></option>
+          <option value="light"></option>
+          <option value="dark"></option>
+        </select>
+        <label for="bed" id="bed-label"></label>
+        <input id="bed" type="number" min="80" max="600" step="1" />
+        <small id="bed-hint"></small>
+        <label for="fit" id="fit-label"></label>
+        <input id="fit" type="number" min="-0.2" max="0.5" step="0.05" />
+        <small id="fit-hint"></small>
         <button id="settings-close" class="ghost"></button>
       </form>
     </dialog>

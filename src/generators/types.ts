@@ -23,6 +23,10 @@ export interface NumberParam extends ParamBase {
   sliderMax?: number;
   /** A value the user rolls instead of setting: a button for a new random one replaces the slider. */
   dice?: boolean;
+  /** A gap between parts that have to fit: the allowance for the user's printer is added to it. */
+  fit?: boolean;
+  /** Follows the print bed size from the settings unless set by hand. */
+  bed?: boolean;
 }
 
 export interface BoolParam extends ParamBase {
@@ -71,7 +75,7 @@ export interface ListParam extends ParamBase {
 
 export type ParamDef = FieldDef | ListParam;
 
-export type GeneratorId = 'enclosure' | 'adapter' | 'organizer' | 'gridfinity' | 'hook' | 'text' | 'gear' | 'qr' | 'relief' | 'cutter' | 'lithophane';
+export type GeneratorId = 'enclosure' | 'adapter' | 'organizer' | 'gridfinity' | 'hook' | 'text' | 'gear' | 'qr' | 'relief' | 'cutter' | 'lithophane' | 'hinge';
 
 export interface GeneratorMeta {
   id: GeneratorId;
