@@ -104,6 +104,8 @@ export const ENCLOSURE_TEMPLATES: Record<string, Params> = {
   hinged: { length: 140, width: 90, height: 50, wall: 3, pcb: false, lidFix: 'snap', hinge: true, hingeCount: 2, gasket: true, gasketWidth: 1.5, openings: [{ type: 'gland', face: 'left', thread: 'M16', height: 22 }], lidVent: 'none' },
   // No screws, no pin: the lid snaps into its hinge and a bolt, printed in place on it, locks the front
   latched: { length: 120, width: 80, height: 45, wall: 2.4, pcb: false, lidFix: 'bolt', hinge: true, hingeType: 'clip', hingePin: 4, lidVent: 'none', openings: [] },
+  // Two AA cells beside a small board, the cable held by a tie
+  battery: { length: 130, width: 75, height: 32, pcbLength: 50, pcbWidth: 40, pcbOffsetX: -32, battery: 'aa', batteryCount: 2, batteryX: 30, lidVent: 'none', openings: [{ type: 'cable', face: 'left', diameter: 5, height: 12 }] },
   // Round sensor housing with a twist-lock lid
   round: { shape: 'round', diameter: 80, height: 40, pcb: false, lidFix: 'twist', openings: [{ type: 'gland', face: 'back', thread: 'PG7', height: 16 }], lidVent: 'holes', lidVentSize: 2.5 },
   speaker: { length: 100, width: 100, height: 50, pcb: false, lidVent: 'none', openings: [{ type: 'speaker', face: 'lid', speaker: '66' }, { type: 'usbc', face: 'back', height: 8 }] },
@@ -130,6 +132,8 @@ export const ADAPTER_TEMPLATES: Record<string, Params> = {
   hoseTee: { std1: 'hose13', barbs1: true, len1: 28, std2: 'hose13', barbs2: true, len2: 28, branch: 'tee', std3: 'hose13', barbs3: true, len3: 28, transition: 4 },
   // A Y-piece splits one hose into two
   hoseY: { std1: 'hose19', barbs1: true, len1: 30, std2: 'hose13', barbs2: true, len2: 28, branch: 'tee', branchAngle: 45, std3: 'hose13', barbs3: true, len3: 28, transition: 8 },
+  // Four hoses meet in a cross
+  hoseCross: { std1: 'hose13', barbs1: true, len1: 28, std2: 'hose13', barbs2: true, len2: 28, branch: 'cross', std3: 'hose13', barbs3: true, len3: 28, transition: 4 },
   // Tee for 40 mm drain pipe with a 32 mm branch
   drainTee: { std1: 'ht40', len1: 30, std2: 'ht40', len2: 30, branch: 'tee', std3: 'ht32', len3: 25, wall: 2.4, transition: 4 },
 };
@@ -173,6 +177,8 @@ export const HOOK_TEMPLATES: Record<string, Params> = {
   pegboard: { mount: 'pegboard', width: 12, thickness: 5, reach: 40, tipHeight: 12, plateHeight: 45 },
   // Snaps onto a 20 mm pipe; the screw goes in through the open front
   pipeClip: { type: 'clip', diameter: 20, width: 15, thickness: 3, plateThickness: 3, screwCount: 1, countersunk: false },
+  // Holds a 25 mm pipe all round: saddle and cap, joined by two screws
+  pipeClamp: { type: 'clamp', diameter: 25, width: 18, thickness: 4, plateThickness: 4, screwCount: 1, screwDiameter: 4, countersunk: false },
   // Three cables or pipes side by side on one rail
   clipRail: { type: 'clip', diameter: 16, width: 12, thickness: 2.4, plateThickness: 3, count: 3, spacing: 30, screwCount: 2 },
   towel: { mount: 'tape', width: 40, thickness: 5, reach: 25, tipHeight: 18, angle: 0, bend: 8, plateHeight: 60, plateThickness: 3 },
@@ -203,6 +209,11 @@ export const GEAR_TEMPLATES: Record<string, Params> = {
   // Two bevel gears turn the drive round a corner
   bevel: { kind: 'bevel', module: 1.5, teeth: 16, teeth2: 24, thickness: 8 },
   miter: { kind: 'bevel', module: 1.5, teeth: 20, teeth2: 20, thickness: 8 },
+  // Axes at 60° instead of a right angle
+  bevel60: { kind: 'bevel', module: 1.5, teeth: 16, teeth2: 24, thickness: 8, shaftAngle: 60 },
+  // 20 teeth for a 6 mm GT2 belt on a 5 mm motor shaft, as on most printers
+  gt2: { kind: 'pulley', teeth: 20, beltWidth: 6, flanges: 'both', bore: 'd', boreDiameter: 5.1, boreFlat: 0.5, hubHeight: 6, hubDiameter: 14 },
+  gt2Idler: { kind: 'pulley', teeth: 40, beltWidth: 6, flanges: 'both', bore: 'round', boreDiameter: 5.1 },
   // One turn of the worm moves the wheel on by one tooth: 1 : 30, and it holds its position
   worm: { kind: 'worm', module: 1.5, teeth: 30, wormStarts: 1, wormDiameter: 16, wormLength: 30, thickness: 10, pressureAngle: '25', backlash: 0.15 },
   // Sun 14, three planets of 13, ring 40: one turn of the carrier for 3.86 of the sun
@@ -256,6 +267,8 @@ export const LITHOPHANE_TEMPLATES: Record<string, Params> = {
   lightJoined: { form: 'arc', width: 140, angle: 110, border: 3, foot: 5, tilt: 8, stand: 'light', standPrint: 'joined', lightDiameter: 68, lightThickness: 25, lightDistance: 55 },
   teaLight: { form: 'arc', width: 110, angle: 140, border: 3, foot: 5, stand: 'light', lightSeat: 'flat', lightDiameter: 38, lightDistance: 30 },
   lampE27: { form: 'cylinder', diameter: 90, border: 4, mount: 'e27' },
+  // A ball, open below for the lamp; a panorama twice as wide as high fits best
+  globe: { form: 'sphere', diameter: 100, sphereBottom: 50, sphereTop: 15, border: 3 },
   lampE14: { form: 'cylinder', diameter: 70, border: 4, mount: 'e14' },
 };
 

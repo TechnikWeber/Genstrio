@@ -13,7 +13,9 @@ export interface LithophaneParams {
   brightness: number;
   contrast: number;
   smoothing: number;
-  form: 'flat' | 'arc' | 'cylinder';
+  form: 'flat' | 'arc' | 'cylinder' | 'sphere';
+  sphereTop: number;
+  sphereBottom: number;
   width: number;
   angle: number;
   diameter: number;
@@ -37,6 +39,7 @@ export interface LithophaneParams {
   lightDistance: number;
   mount: 'none' | 'e27' | 'e14';
   mountVents: boolean;
+  mountCable: boolean;
 }
 
 // A nozzle draws lines about this wide; a finer mesh would only make the file bigger.
@@ -129,7 +132,9 @@ export interface Lithophane {
  */
 export function lithophaneMesh(p: LithophaneParams, original: Picture): Lithophane {
   const source = turned(original, p.rotate);
-  const wrap = p.form === 'cylinder';
+  const ball = p.form === 'sphere';
+  // Closed on itself all the way round
+  const wrap = p.form === 'cylinder' || ball;
   // As many columns as the print can show, but never fewer than the picture has.
   const span = wrap ? Math.PI * p.diameter : p.width - 2 * p.border;
   let across = Math.min(MAX_COLUMNS, Math.max(source.width, Math.round(span / FINEST)));
@@ -140,12 +145,15 @@ export function lithophaneMesh(p: LithophaneParams, original: Picture): Lithopha
   const pitch = wrap ? (Math.PI * p.diameter) / picture.width : Math.max(0.05, (p.width - 2 * p.border) / (picture.width - 1));
   const b = Math.round(p.border / pitch);
   // A plain strip below the picture, for what stands in a slot.
-  const foot = Math.round((p.foot ?? 0) / pitch);
+  const foot = ball ? 0 : Math.round((p.foot ?? 0) / pitch);
   const bx = wrap ? 0 : b;
   const nx = picture.width + 2 * bx;
   const ny = picture.height + 2 * b + foot;
   const width = wrap ? p.diameter : (nx - 1) * pitch;
-  const height = (ny - 1) * pitch;
+  // A ball is cut off flat where it is open: below, for the lamp, and above.
+  const cut = (opening: number) => Math.sqrt(Math.max(0, (p.diameter / 2) ** 2 - (Math.min(opening, p.diameter - 2) / 2) ** 2));
+  const [capTop, capBottom] = ball ? [cut(p.sphereTop), -cut(p.sphereBottom)] : [0, 0];
+  const height = ball ? capTop - capBottom : (ny - 1) * pitch;
   // Bent sheets are measured along their inner side, which keeps its radius.
   const radius = wrap ? Math.max(1, p.diameter / 2 - thick) : width / ((p.angle * Math.PI) / 180);
   const lean = wrap ? 0 : Math.tan(((p.tilt ?? 0) * Math.PI) / 180);
@@ -153,14 +161,22 @@ export function lithophaneMesh(p: LithophaneParams, original: Picture): Lithopha
   const inward = p.form !== 'flat' && p.reliefSide === 'inside';
 
   const columns = wrap ? nx : nx - 1;
-  const rim = wrap ? 2 * nx : 2 * nx + 2 * (ny - 2);
+  // A ball's smooth side is curved both ways, so it needs every vertex, not just its rim.
+  const rim = ball ? nx * ny : wrap ? 2 * nx : 2 * nx + 2 * (ny - 2);
   const vertices = new Float32Array(3 * (nx * ny + rim));
   const shade = new Float32Array(nx * ny + rim).fill(0.8);
   /** `t` is the thickness at a vertex of the picture side; the smooth side has none. */
   const place = (index: number, i: number, j: number, t: number | null) => {
     const z = (ny - 1 - j) * pitch;
     const out = inward ? (t === null ? thick : thick - t) : (t ?? 0);
-    if (p.form === 'flat') {
+    if (ball) {
+      // Rows run from one flat cut to the other, evenly by angle on the shell this vertex lies on.
+      const r = radius + out;
+      const [up, down] = [Math.asin(Math.min(1, capTop / r)), Math.asin(Math.max(-1, capBottom / r))];
+      const lat = up + ((down - up) * j) / (ny - 1);
+      const phi = (i / nx - 0.5) * 2 * Math.PI;
+      vertices.set([r * Math.cos(lat) * Math.sin(phi), -r * Math.cos(lat) * Math.cos(phi), r * Math.sin(lat) - capBottom], 3 * index);
+    } else if (p.form === 'flat') {
       vertices.set([i * pitch - width / 2, -out + z * lean, z], 3 * index);
     } else {
       const phi = wrap ? (i / nx - 0.5) * 2 * Math.PI : (i * pitch - width / 2) / radius;
@@ -182,15 +198,17 @@ export function lithophaneMesh(p: LithophaneParams, original: Picture): Lithopha
   // The smooth side only needs its rim: top row, bottom row and, unless it closes on itself, both sides.
   const base = nx * ny;
   const back = (i: number, j: number) => {
+    if (ball) return base + j * nx + i;
     if (j === 0) return base + i;
     if (j === ny - 1) return base + nx + i;
     return base + 2 * nx + (i === 0 ? 0 : ny - 2) + j - 1;
   };
   for (let i = 0; i < nx; i++) for (const j of [0, ny - 1]) place(back(i, j), i, j, null);
+  if (ball) for (let i = 0; i < nx; i++) for (let j = 1; j < ny - 1; j++) place(back(i, j), i, j, null);
   if (!wrap) for (let j = 1; j < ny - 1; j++) for (const i of [0, nx - 1]) place(back(i, j), i, j, null);
 
   const count = 2 * columns * (ny - 1) + 2 * columns + 4 * columns + (wrap ? 0 : 4 * (ny - 1) + 2 * (ny - 2));
-  const triangles = new Uint32Array(3 * count);
+  const triangles = new Uint32Array(3 * (count + (ball ? 2 * columns * (ny - 1) : 0)));
   let n = 0;
   // Swapping the two sides of the sheet turns every face over, so the corners go round the other way.
   const tri = (a: number, c: number, d: number) => {
@@ -212,7 +230,12 @@ export function lithophaneMesh(p: LithophaneParams, original: Picture): Lithopha
     tri(front(i, ny - 1), bottom(i + 1), front(i + 1, ny - 1));
     tri(front(i, ny - 1), bottom(i), bottom(i + 1));
     // The smooth side, one strip per column; the outermost strips fan out to the side rims.
-    if (!wrap && i === 0) {
+    if (ball) {
+      for (let j = 0; j < ny - 1; j++) {
+        tri(back(i, j), back((i + 1) % nx, j + 1), back(i, j + 1));
+        tri(back(i, j), back((i + 1) % nx, j), back((i + 1) % nx, j + 1));
+      }
+    } else if (!wrap && i === 0) {
       for (let j = 0; j < ny - 1; j++) tri(top(1), back(0, j + 1), back(0, j));
       tri(top(1), bottom(1), bottom(0));
     } else if (!wrap && i === columns - 1) {
@@ -256,23 +279,24 @@ export function* buildLithophane(p: LithophaneParams): Build {
   const picture = p.image ? decodeImage(p.image) : samplePhoto();
   if (!picture || picture.width < 8 || picture.height < 8) throw new ParamError('err.noImage');
   if (!p.image) notes.push({ level: 'info', key: 'note.lithoSample' });
-  if (p.form !== 'cylinder' && p.width - 2 * p.border < 10) throw new ParamError('err.lithoBorder');
+  const upright = p.form === 'flat' || p.form === 'arc';
+  if (upright && p.width - 2 * p.border < 10) throw new ParamError('err.lithoBorder');
   const litho = lithophaneMesh(p, picture);
   let { mesh } = litho;
   const { width, height, pitch, radius, thick } = litho;
-  notes.push({ level: 'info', key: p.form === 'cylinder' ? 'note.lithoCylinder' : 'note.lithoSize', vars: { w: round1(width), h: round1(height), p: Math.round(pitch * 100) / 100 } });
+  notes.push({ level: 'info', key: p.form === 'cylinder' ? 'note.lithoCylinder' : p.form === 'sphere' ? 'note.lithoSphere' : 'note.lithoSize', vars: { w: round1(width), h: round1(height), p: Math.round(pitch * 100) / 100 } });
   notes.push({ level: 'info', key: 'note.lithoPrint' });
   if (pitch > 0.6) notes.push({ level: 'info', key: 'note.lithoCoarse', vars: { p: Math.round(pitch * 100) / 100 } });
-  if (p.form !== 'cylinder' && p.tilt > 0) notes.push({ level: 'info', key: 'note.lithoTilt', vars: { a: p.tilt } });
+  if (upright && p.tilt > 0) notes.push({ level: 'info', key: 'note.lithoTilt', vars: { a: p.tilt } });
 
   const parts: Part[] = [];
   if (p.form === 'cylinder' && p.mount !== 'none') {
     // Beside the cylinder for printing; fitted, it closes the top, collar down.
     const at = p.diameter + 8;
-    parts.push({ name: 'mount', shape: buildMount(p.mount, p.diameter / 2, radius, p.mountVents).translate([at, 0, 0]) as Shape3D, assembled: { flip: true, offset: [at, 0, height + 2] } });
+    parts.push({ name: 'mount', shape: buildMount(p.mount, p.diameter / 2, radius, p.mountVents, p.mountCable).translate([at, 0, 0]) as Shape3D, assembled: { flip: true, offset: [at, 0, height + 2] } });
     notes.push({ level: 'info', key: 'note.lithoMount', vars: { d: p.mount === 'e27' ? 40.5 : 28.5 } });
   }
-  if (p.form !== 'cylinder' && p.stand !== 'none') {
+  if ((p.form === 'flat' || p.form === 'arc') && p.stand !== 'none') {
     const joined = p.standPrint === 'joined';
     const stand = buildStand({ ...p, form: p.form, radius, foot: thick, joined, light: p.stand === 'light' ? p.lightSeat : 'none' });
     if (joined) {

@@ -133,7 +133,7 @@ export const LAMP_HOLES = { e27: 40.5, e14: 28.5 };
  * flange that rests on the rim and a collar that sits inside it. It prints
  * flange down; vents let the warmth out.
  */
-export function buildMount(socket: keyof typeof LAMP_HOLES, outer: number, inner: number, vents: boolean): Shape3D {
+export function buildMount(socket: keyof typeof LAMP_HOLES, outer: number, inner: number, vents: boolean, cable = false): Shape3D {
   const hole = LAMP_HOLES[socket] / 2;
   const collar = inner - 0.25;
   if (collar < hole + 5) throw new ParamError('err.lithoMount');
@@ -145,5 +145,7 @@ export function buildMount(socket: keyof typeof LAMP_HOLES, outer: number, inner
     const count = Math.max(3, Math.floor((2 * Math.PI * at) / (room + 4)));
     for (let k = 0; k < count; k++) tools.push(prism(drawCircle(room / 2 - 1).translate(at * Math.cos((2 * Math.PI * k) / count), at * Math.sin((2 * Math.PI * k) / count)), 6, -1));
   }
+  // Used as the bottom, the lid lets the cable out under its rim.
+  if (cable) tools.push(prism(roundedRect(outer - Math.max(hole + 3, collar - 2.4) + 2, 7, 0).translate((outer + Math.max(hole + 3, collar - 2.4)) / 2 + 1, 0), 10, -1));
   return cutAll(mount, tools);
 }

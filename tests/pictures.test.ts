@@ -568,6 +568,36 @@ describe('lithophane', () => {
     }
   });
 
+  it('wraps the picture round a sphere, cut off flat above and below', () => {
+    for (const reliefSide of ['outside', 'inside']) {
+      const ball = lithophaneMesh(litho({ form: 'sphere', diameter: 80, sphereBottom: 40, sphereTop: 20, border: 2, reliefSide }), grey(120, 160, 80));
+      expect(openEdges(ball.mesh), reliefSide).toBe(0);
+      const v = ball.mesh.vertices;
+      const axis = (k: number) => Array.from({ length: v.length / 3 }, (_, i) => v[3 * i + k]);
+      const zs = axis(2);
+      // It stands on its lower cut, and is as high as the two cuts are apart.
+      const high = Math.sqrt(40 ** 2 - 10 ** 2) + Math.sqrt(40 ** 2 - 20 ** 2);
+      const span = (values: number[]) => values.reduce(([lo, hi], n) => [Math.min(lo, n), Math.max(hi, n)], [Infinity, -Infinity]);
+      expect(span(zs)[0], reliefSide).toBeCloseTo(0, 4);
+      expect(span(zs)[1], reliefSide).toBeCloseTo(high, 3);
+      expect(ball.height, reliefSide).toBeCloseTo(high, 6);
+      // Its widest ring has the diameter asked for, wherever the relief is.
+      const [x0, x1] = span(axis(0));
+      expect(x1 - x0, reliefSide).toBeGreaterThan(reliefSide === 'inside' ? 79.9 : 77);
+      expect(x1 - x0, reliefSide).toBeLessThanOrEqual(80.01);
+      // A shell between the two cuts: its volume is that of the zone times its thickness, roughly.
+      const zone = 2 * Math.PI * 39 * high;
+      expect(meshVolume(ball.mesh), reliefSide).toBeGreaterThan(zone * 0.6);
+      expect(meshVolume(ball.mesh), reliefSide).toBeLessThan(zone * 3);
+    }
+    const { result } = run('lithophane', { form: 'sphere', diameter: 100 });
+    expect(result.parts).toHaveLength(0);
+    expect(result.notes.map((n) => n.key)).toContain('note.lithoSphere');
+    // A lid used as the bottom can let the cable out.
+    const lid = (mountCable: boolean) => measureVolume(run('lithophane', { form: 'cylinder', diameter: 90, mount: 'e14', mountCable }).result.parts[0].shape);
+    expect(lid(true)).toBeLessThan(lid(false) - 50);
+  });
+
   it('takes pictures upright or lying, and turns them', () => {
     // 60 × 40 pixels: lying. Its left third is black.
     const lying: Bitmap = { width: 60, height: 40, data: new Uint8Array(2400).map((_, i) => (i % 60 < 20 ? 0 : 255)) };

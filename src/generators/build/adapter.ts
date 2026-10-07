@@ -23,7 +23,7 @@ export interface AdapterParams {
   barbCount2: number;
   barbHeight2: number;
   barbPitch2: number;
-  branch: 'none' | 'tee';
+  branch: 'none' | 'tee' | 'cross';
   std3: string;
   d3: number;
   fit3: Fit;
@@ -142,7 +142,7 @@ export function* buildAdapter(p: AdapterParams): Build {
   };
 
   // A branch needs a straight stretch of run to leave from; it follows end 1.
-  const branched = p.branch === 'tee' && p.angle <= 0;
+  const branched = p.branch !== 'none' && p.angle <= 0;
   const third = branched ? resolveEnd(p.std3, p.d3, p.fit3, p.wall, p.clearance) : null;
   if (third && third.ro > a.ro + 0.01) throw new ParamError('err.branchLarge');
   const slant = (p.branchAngle * Math.PI) / 180;
@@ -196,19 +196,24 @@ export function* buildAdapter(p: AdapterParams): Build {
     const c3 = chamfers(third, false);
     const reach = a.ro / Math.sin(slant) + third.ro / Math.tan(slant) + 1;
     const total = p.len3 + reach;
-    const outward = (part: Shape3D) =>
-      part
-        .translate(0, 0, -total)
-        .rotate(p.branchAngle + 180, [0, 0, 0], [0, 1, 0])
-        .translate(0, 0, p.len1 + run / 2) as Shape3D;
-    const outer = sleeveOuter(third.ro, total, barbsFor(3, third, p.barbs3, p.len3, p.barbCount3, p.barbHeight3, p.barbPitch3), c3[0]);
-    shape = shape.fuse(outward(revolve([[0, 0], ...outer, [0, total]]))) as Shape3D;
-    const thread3 = threadOf(third, p.len3);
-    if (thread3.add) shape = shape.fuse(outward(thread3.add)) as Shape3D;
-    // Open the branch into the run, and the run again where the branch filled it.
-    shape = shape.cut(outward(revolve([[0, -1], [third.ri + c3[1], -1], [third.ri + c3[1], 0], [third.ri, c3[1]], [third.ri, total], [0, total]]))) as Shape3D;
+    const barbs = barbsFor(3, third, p.barbs3, p.len3, p.barbCount3, p.barbHeight3, p.barbPitch3);
+    // A cross has the same branch again on the opposite side.
+    for (const side of p.branch === 'cross' ? [0, 180] : [0]) {
+      const outward = (part: Shape3D) =>
+        part
+          .translate(0, 0, -total)
+          .rotate(p.branchAngle + 180, [0, 0, 0], [0, 1, 0])
+          .rotate(side, [0, 0, 0], [0, 0, 1])
+          .translate(0, 0, p.len1 + run / 2) as Shape3D;
+      shape = shape.fuse(outward(revolve([[0, 0], ...sleeveOuter(third.ro, total, barbs, c3[0]), [0, total]]))) as Shape3D;
+      const thread3 = threadOf(third, p.len3);
+      if (thread3.add) shape = shape.fuse(outward(thread3.add)) as Shape3D;
+      // Open the branch into the run.
+      shape = shape.cut(outward(revolve([[0, -1], [third.ri + c3[1], -1], [third.ri + c3[1], 0], [third.ri, c3[1]], [third.ri, total], [0, total]]))) as Shape3D;
+      if (thread3.cut) shape = shape.cut(outward(thread3.cut)) as Shape3D;
+    }
+    // … and the run again where the branches filled it.
     shape = shape.cut(makeCylinder(a.ri, run + 1, [0, 0, p.len1 - 0.5]) as Shape3D) as Shape3D;
-    if (thread3.cut) shape = shape.cut(outward(thread3.cut)) as Shape3D;
     notes.push({ level: 'info', key: 'note.branch', vars: { a: p.branchAngle } });
   }
 

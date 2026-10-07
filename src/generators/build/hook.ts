@@ -1,9 +1,9 @@
-import { draw, makeBaseBox, makeCylinder, type Drawing, type Shape3D, type Sketch } from 'replicad';
+import { draw, drawCircle, makeBaseBox, makeCylinder, type Drawing, type Shape3D, type Sketch } from 'replicad';
 import type { Note } from '../types';
-import { cutAll, fuseAll, revolveZ, round1, roundedBox, type Build } from './common';
+import { cutAll, fuseAll, revolveZ, round1, roundedBox, type Build, type Part } from './common';
 
 export interface HookParams {
-  type: 'hook' | 'cradle' | 'clip' | 'bracket';
+  type: 'hook' | 'cradle' | 'clip' | 'clamp' | 'bracket';
   clipOpening: number;
   width: number;
   thickness: number;
@@ -95,7 +95,7 @@ export function* buildHook(p: HookParams): Build {
   const w = p.width;
   const d = p.screwDiameter;
   // Several hooks share one plate; that only works on a plain wall.
-  const count = p.type !== 'bracket' && (p.mount === 'screws' || p.mount === 'tape') ? Math.round(p.count) : 1;
+  const count = p.type !== 'bracket' && p.type !== 'clamp' && (p.mount === 'screws' || p.mount === 'tape') ? Math.round(p.count) : 1;
   const rail = count > 1;
 
   // --- the arm, in profile: x out from the wall, y up, wall face at x = 0 -----
@@ -105,6 +105,9 @@ export function* buildHook(p: HookParams): Build {
   let plateH = p.plateHeight;
   // How much material a screw passes: the plate, and for a clip the back of its ring.
   let through = tb;
+  // A clamp has a second part, and holes its screws bite into.
+  let cap: Shape3D | null = null;
+  let capHoles: Shape3D[] = [];
   if (p.type === 'hook') {
     const up = p.tipHeight > 0 ? 90 - p.angle : 0;
     const radius = p.bend + t / 2;
@@ -133,6 +136,25 @@ export function* buildHook(p: HookParams): Build {
     [clearFrom, clearTo] = [cy - p.diameter / 2 - 1.5, cy + p.diameter / 2 + 1.5];
     notes.push({ level: 'info', key: 'note.clipSize', vars: { d: round1(p.diameter), g: round1((p.diameter + 0.3) * Math.sin(half)) } });
     if (p.clipOpening > 150) notes.push({ level: 'info', key: 'note.clipLoose' });
+  } else if (p.type === 'clamp') {
+    // A saddle on the plate and a cap screwed onto it: the pipe is held all round.
+    const r = p.diameter / 2 + 0.15;
+    const ear = Math.max(8, d * 2.4);
+    const half = r + ear;
+    plateH = Math.max(plateH, 2 * half);
+    const cx = tb + t + r;
+    const cy = plateH / 2;
+    const bore = drawCircle(r).translate(cx, cy);
+    arm = slab(polygon([[tb / 2, cy - half], [cx - 0.25, cy - half], [cx - 0.25, cy + half], [tb / 2, cy + half]]).cut(bore), w);
+    const lid = slab(polygon([[cx + 0.25, cy - half], [cx + r + t, cy - half], [cx + r + t, cy + half], [cx + 0.25, cy + half]]).cut(bore), w);
+    // Its screws run towards the wall, beside the pipe: through the cap, into the saddle.
+    const depth = Math.min(12, cx - 2);
+    const ys = [cy - r - ear / 2, cy + r + ear / 2];
+    cap = cutAll(lid, ys.map((y) => makeCylinder(d / 2 + 0.2, t + r + 2, [cx, y, w / 2], [1, 0, 0]) as Shape3D));
+    capHoles = ys.map((y) => makeCylinder(d * 0.4, depth + 0.3, [cx - depth, y, w / 2], [1, 0, 0]) as Shape3D);
+    through = tb + t;
+    [clearFrom, clearTo] = [cy - p.diameter / 2 - 1.5, cy + p.diameter / 2 + 1.5];
+    notes.push({ level: 'info', key: 'note.clampSize', vars: { d: round1(p.diameter), s: d, l: round1(depth) } });
   } else {
     const end = tb + p.reach;
     plateH = Math.max(plateH, t + 10);
@@ -209,7 +231,7 @@ export function* buildHook(p: HookParams): Build {
     if (hi < lo || !room) notes.push({ level: 'warn', key: 'note.noRoomShelfHoles' });
     else for (const x of spread(Math.round(p.shelfHoles), lo, hi)) cuts.push(makeCylinder(d / 2, t + 2, [x, plateH - t - 1, beside], [0, 1, 0]) as Shape3D);
   }
-  body = cutAll(body, cuts);
+  body = cutAll(body, [...cuts, ...capHoles]);
 
   // --- lay it on the bed -----------------------------------------------------
   // A single hook lies on its side: the layers then run along the arm, which is what makes it strong.
@@ -221,5 +243,12 @@ export function* buildHook(p: HookParams): Build {
   }
   const [[x0, y0, z0], [x1, y1]] = body.boundingBox.bounds;
   body = body.translate(-(x0 + x1) / 2, -(y0 + y1) / 2, -z0) as Shape3D;
-  return { parts: [{ name: 'hook', shape: body }], notes };
+  const parts: Part[] = [{ name: 'hook', shape: body }];
+  if (cap) {
+    // Moved along with the saddle, then set a little apart for printing.
+    const apart = 6;
+    parts[0].assembled = { flip: false, offset: [0, 0, 0] };
+    parts.push({ name: 'cap', shape: cap.translate(-(x0 + x1) / 2 + apart, -(y0 + y1) / 2, -z0) as Shape3D, assembled: { flip: false, offset: [-apart, 0, 0] } });
+  }
+  return { parts, notes };
 }

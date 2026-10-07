@@ -168,22 +168,64 @@ describe('gear', () => {
     const note = result.notes.find((n) => n.key === 'note.bevel')!.vars!;
     expect(note.a).toBeCloseTo(33.7, 1);
     expect(note.i).toBe(1.5);
-    // The axis of each gear runs through the other one's pitch circle: 18 and 12 mm up.
-    expect(note.h1).toBeCloseTo(12, 1);
-    expect(note.h2).toBeCloseTo(18, 1);
+    // The tip of each cone lies where the other gear's pitch circle is: 18 and 12 mm up.
+    expect(note.h1).toBeCloseTo(18, 1);
+    expect(note.h2).toBeCloseTo(12, 1);
     // Teeth taper towards the tip of the cone: the top is smaller than the bottom.
     const [w, , h] = size(a.shape);
     expect(w).toBeGreaterThan(24);
-    expect(w).toBeLessThan(27.5);
+    expect(w).toBeLessThan(28.5);
     expect(h).toBeCloseTo(8 * Math.cos(Math.atan(16 / 24)), 2);
-    expect(measureVolume(a.shape)).toBeLessThan(Math.PI * 12 ** 2 * h * 0.8);
+    expect(measureVolume(a.shape)).toBeLessThan(Math.PI * 12 ** 2 * h * 0.95);
     // Fitted, one lies on its side and they mesh; half a tooth on, they would collide.
     expect(b.assembled!.tilt).toBe(90);
-    expect(measureVolume(inMesh(a).intersect(inMesh(b)))).toBeLessThan(0.6);
+    expect(measureVolume(inMesh(a).intersect(inMesh(b)))).toBeLessThan(0.05);
     expect(measureVolume(inMesh(a).intersect(inMesh(b, 180 / 24)))).toBeGreaterThan(5);
     const miter = run('gear', { kind: 'bevel', teeth: 20, teeth2: 0, bore: 'none' }).result.parts;
     expect(measureVolume(miter[0].shape)).toBeCloseTo(measureVolume(miter[1].shape), 0);
     expect(measureVolume(inMesh(miter[0]).intersect(inMesh(miter[1])))).toBeLessThan(0.3);
+  });
+
+  it('meshes bevel gears at other shaft angles and steep ratios', () => {
+    for (const [shaftAngle, teeth, teeth2] of [[60, 16, 24], [120, 20, 20], [90, 16, 48], [105, 16, 24]]) {
+      const { result } = run('gear', { kind: 'bevel', module: 1.5, teeth, teeth2, thickness: 8, shaftAngle, bore: 'none' });
+      const [a, b] = result.parts;
+      const label = `${shaftAngle}° ${teeth}/${teeth2}`;
+      const vars = result.notes.find((n) => n.key === 'note.bevel')!.vars!;
+      // The two cone angles make up the angle between the axes.
+      expect((vars.a as number) + (vars.b as number), label).toBeCloseTo(shaftAngle, 0);
+      expect(b.assembled!.tilt, label).toBe(shaftAngle);
+      expect(measureVolume(inMesh(a).intersect(inMesh(b))), label).toBeLessThan(0.05);
+      expect(measureVolume(inMesh(a).intersect(inMesh(b, 180 / teeth2))), label).toBeGreaterThan(2);
+    }
+    // One gear nearly flat, its teeth pointing along the axis: that is not what this builds.
+    expect(() => run('gear', { kind: 'bevel', teeth: 12, teeth2: 60, shaftAngle: 135 })).toThrow(ParamError);
+  });
+
+  it('builds a GT2 belt pulley', () => {
+    const { result } = run('gear', { kind: 'pulley', teeth: 20, beltWidth: 6, flanges: 'both', bore: 'round', boreDiameter: 5 });
+    const pulley = result.parts[0].shape;
+    expect(pulley.solids.length).toBe(1);
+    // 20 teeth of 2 mm pitch: pitch Ø 12.73, the rim 0.254 mm inside it all round, flanges 1.2 mm beyond
+    const outer = 40 / Math.PI - 0.508;
+    expect(result.notes.find((n) => n.key === 'note.pulley')?.vars).toMatchObject({ n: 20, d: 12.73, o: 12.22 });
+    const [w, , h] = size(pulley);
+    expect(w).toBeCloseTo(outer + 2.4, 1);
+    expect(h).toBeCloseTo(1 + 7 + 1.5, 3);
+    const bare = run('gear', { kind: 'pulley', teeth: 20, beltWidth: 6, flanges: 'none', bore: 'none' }).result.parts[0].shape;
+    // A groove faces each way along X, so the widest it measures is across the edges of two grooves.
+    expect(size(bare)[0]).toBeGreaterThan(outer - 0.12);
+    expect(size(bare)[0]).toBeLessThanOrEqual(outer + 0.001);
+    expect(size(bare)[2]).toBeCloseTo(7, 1);
+    // Twenty grooves 0.8 mm deep: between the full rim and a disc at their bottom
+    expect(measureVolume(bare)).toBeLessThan(Math.PI * (outer / 2) ** 2 * 7.2 * 0.95);
+    expect(measureVolume(bare)).toBeGreaterThan(Math.PI * (outer / 2 - 0.8) ** 2 * 7.2);
+    // A belt tooth sits in a groove; between grooves there is rim.
+    const probe = (angle: number) => measureVolume(bare.clone().intersect((makeBaseBox(0.2, 0.2, 2) as Shape3D).translate([-0.1 + (outer / 2 - 0.4) * Math.cos(angle), -0.1 + (outer / 2 - 0.4) * Math.sin(angle), 2])));
+    expect(probe(0)).toBeLessThan(0.001);
+    expect(probe(Math.PI / 20)).toBeCloseTo(0.08, 2);
+    expect(run('gear', { kind: 'pulley', teeth: 20, hubHeight: 6, hubDiameter: 12, flanges: 'both' }).result.parts[0].shape.solids.length).toBe(1);
+    expect(() => run('gear', { kind: 'pulley', teeth: 10, boreDiameter: 8 })).toThrow(ParamError);
   });
 
   it('builds a worm that drives its wheel', () => {

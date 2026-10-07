@@ -1,10 +1,10 @@
 import { draw, drawCircle, drawPolysides, type Drawing, type Shape3D, type Sketch } from 'replicad';
 import type { Note } from '../types';
-import { ParamError, prism, regionsSolid, round1, roundedRect, type Build, type Part } from './common';
+import { ParamError, prism, regionsSolid, revolveZ, round1, roundedRect, type Build, type Part } from './common';
 import type { Pt } from './trace';
 
 export interface GearParams {
-  kind: 'spur' | 'rack' | 'ring' | 'planetary' | 'bevel' | 'worm';
+  kind: 'spur' | 'rack' | 'ring' | 'planetary' | 'bevel' | 'worm' | 'pulley';
   module: number;
   teeth: number;
   teeth2: number;
@@ -28,6 +28,9 @@ export interface GearParams {
   wormStarts: number;
   wormDiameter: number;
   wormLength: number;
+  shaftAngle: number;
+  beltWidth: number;
+  flanges: 'none' | 'bottom' | 'both';
 }
 
 const DEDENDUM = 1.25;
@@ -80,7 +83,16 @@ function gearDrawing(m: number, z: number, alpha: number, { addendum, dedendum, 
   radii[0] = start;
   radii[steps] = tip;
   if (root < start - 1e-6) radii.unshift(root);
-  const seen = (r: number) => (m * z) / 2 + (r - pitch) * lean;
+  // A point of that larger gear lies on the back cone, above or below the flat outline drawn here;
+  // it is brought into the outline along its ray to the tip of the pitch cone.
+  const flat = (m * z) / 2;
+  const seen = (r: number) => {
+    const rise = (r - pitch) * Math.sin(cone);
+    // Tips lie towards the tip of the cone and so come out further; on a cone too flat they would never arrive.
+    const left = flat - rise * Math.tan(cone);
+    if (left < 0.35 * flat) throw new ParamError('err.bevelAngle');
+    return ((flat + (r - pitch) * lean) * flat) / left;
+  };
   const polar = (r: number, a: number): Pt => [seen(r) * Math.cos(a + turn), seen(r) * Math.sin(a + turn)];
 
   let pen = draw(polar(root, -half(root)));
@@ -243,8 +255,7 @@ function bevelSolid(p: GearParams, z: number, cone: number, turn: number): { sha
   const pitch = (m * z) / 2;
   const distance = pitch / Math.sin(cone);
   const face = Math.min(p.thickness, distance * 0.4);
-  // Tips a little short of the full height keep clear of the root of a small mating gear, where its flank is not relieved.
-  const { drawing, tip } = gearDrawing(m, z, alpha, { ...external(p), addendum: 0.9 }, turn, false, cone);
+  const { drawing, tip } = gearDrawing(m, z, alpha, external(p), turn, false, cone);
   const top = drawing.scale(1 - face / distance, [0, 0]).sketchOnPlane('XY', face * Math.cos(cone)) as Sketch;
   let shape = (drawing.sketchOnPlane('XY', 0) as Sketch).loftWith(top, { ruled: true }) as Shape3D;
   const bore = boreDrawing(p);
@@ -254,20 +265,85 @@ function bevelSolid(p: GearParams, z: number, cone: number, turn: number): { sha
 
 function buildBevel(p: GearParams): { parts: Part[]; notes: Note[] } {
   const z2 = p.teeth2 > 0 ? p.teeth2 : p.teeth;
-  // The two pitch cones share their tip and touch along a line; for axes at a right angle their half angles add up to 90°.
-  const cone = Math.atan(p.teeth / z2);
+  // The two pitch cones share their tip and touch along a line, so their half angles add up to the angle between the axes.
+  const shaft = ((p.shaftAngle ?? 90) * Math.PI) / 180;
+  const cone = Math.atan(Math.sin(shaft) / (z2 / p.teeth + Math.cos(shaft)));
+  // Past about 75° a cone is nearly a disc with teeth standing on it, which is another kind of gear.
+  if (cone <= 0.05 || shaft - cone <= 0.05 || Math.max(cone, shaft - cone) > 1.32) throw new ParamError('err.bevelAngle');
   const first = bevelSolid(p, p.teeth, cone, Math.PI - Math.PI / p.teeth);
-  const second = bevelSolid(p, z2, Math.PI / 2 - cone, 0);
+  const second = bevelSolid(p, z2, shaft - cone, 0);
   const apart = first.tip + second.tip + 3;
-  const notes: Note[] = [{ level: 'info', key: 'note.bevel', vars: { a: round1((cone * 180) / Math.PI), b: round1(90 - (cone * 180) / Math.PI), i: Math.round((z2 / p.teeth) * 1000) / 1000, h1: round1(second.apex), h2: round1(first.apex) } }];
+  const deg = (a: number) => round1((a * 180) / Math.PI);
+  const notes: Note[] = [{ level: 'info', key: 'note.bevel', vars: { s: p.shaftAngle ?? 90, a: deg(cone), b: deg(shaft - cone), i: Math.round((z2 / p.teeth) * 1000) / 1000, h1: round1(first.apex), h2: round1(second.apex) } }];
   if (first.face < p.thickness - 0.01) notes.push({ level: 'info', key: 'note.bevelFace', vars: { b: round1(first.face) } });
   return {
     parts: [
       { name: 'gear', shape: first.shape, assembled: { flip: false, offset: [0, 0, 0] } },
-      // Fitted, the second gear stands on its side, its axis crossing the first one at the shared tip of the cones.
-      { name: 'gear2', shape: second.shape.translate([apart, 0, 0]) as Shape3D, assembled: { flip: false, tilt: 90, offset: [-second.apex, 0, first.apex + apart] } },
+      // Fitted, the second gear is tipped over by the angle between the axes, the tips of both cones in one point.
+      {
+        name: 'gear2',
+        shape: second.shape.translate([apart, 0, 0]) as Shape3D,
+        assembled: { flip: false, tilt: p.shaftAngle ?? 90, offset: [-second.apex * Math.sin(shaft) - apart * Math.cos(shaft), 0, first.apex - second.apex * Math.cos(shaft) + apart * Math.sin(shaft)] },
+      },
     ],
     notes,
+  };
+}
+
+// A GT2 belt: teeth every 2 mm, 0.75 mm high, its cords 0.254 mm outside the pulley.
+const GT2 = { pitch: 2, offset: 0.254, depth: 0.8, round: 0.6, mouth: 0.74 };
+
+/**
+ * A pulley for a GT2 timing belt. Each groove is a round bottom that widens
+ * towards the rim: close to the real profile, which is made of three arcs,
+ * and with the play a printed pulley needs anyway.
+ */
+function buildPulley(p: GearParams): { parts: Part[]; notes: Note[] } {
+  const n = p.teeth;
+  const outer = (n * GT2.pitch) / Math.PI / 2 - GT2.offset;
+  const bore = p.bore === 'none' ? 0 : p.boreDiameter / 2;
+  if (outer - GT2.depth < bore + 1.2) throw new ParamError('err.gearBore');
+  // Depth of the groove at a distance s from its middle, measured along the rim
+  const centre = GT2.depth - GT2.round;
+  const edge = Math.sqrt(GT2.round ** 2 - centre ** 2) * 0.92;
+  const depthAt = (s: number) => {
+    const a = Math.abs(s);
+    if (a >= GT2.mouth) return 0;
+    const round = centre + Math.sqrt(Math.max(0, GT2.round ** 2 - Math.min(a, edge) ** 2));
+    return a <= edge ? round : (round * (GT2.mouth - a)) / (GT2.mouth - edge);
+  };
+  const outline: Pt[] = [];
+  const steps = n > 30 ? 4 : 6;
+  for (let k = 0; k < n; k++) {
+    const at = (2 * Math.PI * k) / n;
+    for (let i = -steps; i <= steps; i++) {
+      const s = (GT2.mouth * i) / steps;
+      const angle = at + s / outer;
+      const r = outer - depthAt(s);
+      outline.push([r * Math.cos(angle), r * Math.sin(angle)]);
+    }
+    // The rim between two grooves, kept round by a point in its middle
+    outline.push([outer * Math.cos(at + Math.PI / n), outer * Math.sin(at + Math.PI / n)]);
+  }
+  const belt = p.beltWidth + 1;
+  const low = p.flanges === 'none' ? 0 : 1;
+  const high = p.flanges === 'both' ? 1.5 : 0;
+  // Reaching a little into each rim, where there is one
+  const from = low ? low - 0.2 : 0;
+  let shape = regionsSolid([{ outer: outline, holes: [] }], low + belt + (high ? 0.2 : 0) - from, from);
+  // The rims that keep the belt on: the lower one flat on the bed, the upper one sloped so it prints without support.
+  if (low) shape = shape.fuse(prism(drawCircle(outer + 1.2), low)) as Shape3D;
+  if (high) shape = shape.fuse(revolveZ([[0, low + belt], [outer - 0.2, low + belt], [outer + 1.2, low + belt + high - 0.3], [outer + 1.2, low + belt + high], [0, low + belt + high]])) as Shape3D;
+  const height = low + belt + high;
+  if (p.hubHeight > 0) shape = shape.fuse(prism(drawCircle(Math.min(p.hubDiameter / 2, outer)), p.hubHeight + 0.2, height - 0.2)) as Shape3D;
+  const hole = boreDrawing(p);
+  if (hole) shape = shape.cut(prism(hole, height + p.hubHeight + 2, -1)) as Shape3D;
+  return {
+    parts: [{ name: 'pulley', shape }],
+    notes: [
+      { level: 'info', key: 'note.pulley', vars: { n, d: Math.round(((n * GT2.pitch) / Math.PI) * 100) / 100, o: Math.round(2 * outer * 100) / 100, w: p.beltWidth } },
+      { level: 'info', key: 'note.pulleyFit' },
+    ],
   };
 }
 
@@ -367,6 +443,7 @@ export function* buildGear(p: GearParams): Build {
   if (p.kind === 'planetary') return yield* buildPlanetary(p);
   if (p.kind === 'bevel') return buildBevel(p);
   if (p.kind === 'worm') return buildWorm(p);
+  if (p.kind === 'pulley') return buildPulley(p);
   const m = p.module;
   const alpha = (Number(p.pressureAngle) * Math.PI) / 180;
   const notes: Note[] = [];

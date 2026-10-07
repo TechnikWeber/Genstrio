@@ -9,7 +9,7 @@ type Vent = 'none' | Pattern;
 type ScrewSize = keyof typeof SCREWS;
 
 export interface Opening {
-  type: 'round' | 'gland' | 'rect' | 'speaker' | 'fan' | keyof typeof CONNECTORS;
+  type: 'round' | 'gland' | 'cable' | 'rect' | 'speaker' | 'fan' | keyof typeof CONNECTORS;
   face: Side | 'lid' | 'floor';
   preset: 'custom' | keyof typeof ROUND_PRESETS;
   diameter: number;
@@ -72,6 +72,11 @@ export interface EnclosureParams {
   hingeWidth: number;
   hingePin: number;
   hingeType: 'pin' | 'clip';
+  battery: 'none' | keyof typeof BATTERIES;
+  batteryCount: number;
+  batteryX: number;
+  batteryY: number;
+  batteryTurn: boolean;
   gasket: boolean;
   gasketWidth: number;
   openings: Opening[];
@@ -268,6 +273,14 @@ function makeOutline(p: EnclosureParams): Outline {
   };
 }
 
+// Cells a tray can be made for: diameter (or width and height of a block) and length in mm
+const BATTERIES = {
+  aaa: { w: 10.5, h: 10.5, l: 44.5 },
+  aa: { w: 14.5, h: 14.5, l: 50.5 },
+  c18650: { w: 18.6, h: 18.6, l: 65.2 },
+  block9v: { w: 26.5, h: 17.5, l: 48.5 },
+};
+
 interface Rect {
   x: number;
   y: number;
@@ -288,8 +301,8 @@ function grille(kind: Pattern | 'open', radius: number): Drawing[] {
 
 /** The 2D contour(s) an opening cuts, centred on its position. */
 function openingContour(o: Opening): { drawings: Drawing[]; hw: number; hh: number } {
-  if (o.type === 'round' || o.type === 'gland') {
-    const d = o.type === 'gland' ? THREADS[o.thread][0] + 0.4 : o.preset === 'custom' ? o.diameter : ROUND_PRESETS[o.preset];
+  if (o.type === 'round' || o.type === 'gland' || o.type === 'cable') {
+    const d = o.type === 'gland' ? THREADS[o.thread][0] + 0.4 : o.type === 'cable' || o.preset === 'custom' ? o.diameter : ROUND_PRESETS[o.preset];
     return { drawings: [drawCircle(d / 2)], hw: d / 2, hh: d / 2 };
   }
   if (o.type === 'speaker') {
@@ -680,6 +693,33 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     else warn('note.noRoomBolt');
   }
 
+  // --- battery tray ----------------------------------------------------------
+  // Low walls on the floor that cells lie between, with a slit at each end for
+  // the contacts, which are bought, not printed.
+  if (p.battery !== 'none') {
+    const cell = BATTERIES[p.battery];
+    const n = Math.round(p.batteryCount);
+    const wallT = 1.6;
+    const pocketL = cell.l + 7; // room for a spring and a contact plate
+    const pocketW = cell.w + 0.6;
+    const [lx, ly] = [pocketL + 2 * wallT, n * pocketW + (n + 1) * wallT];
+    const high = Math.min(cell.h * 0.6, hb - t - lipH - 1);
+    const turn = p.batteryTurn ? 90 : 0;
+    const [hx, hy] = p.batteryTurn ? [ly / 2, lx / 2] : [lx / 2, ly / 2];
+    const set = (shape: Shape3D) => shape.rotate(turn, O, Z).translate(p.batteryX, p.batteryY, 0) as Shape3D;
+    if (![[1, 1], [1, -1], [-1, 1], [-1, -1]].every(([sx, sy]) => out.inside(p.batteryX + sx * hx, p.batteryY + sy * hy, t - 0.1)) || high < 3) warn('note.batteryOutside');
+    else {
+      adds.push(set(prism(roundedRect(lx, ly, 1), high + 0.1, t - 0.1)));
+      for (let i = 0; i < n; i++) {
+        const y = (i - (n - 1) / 2) * (pocketW + wallT);
+        // Pocket and the slits through both end walls, as one tool
+        cuts.push(set(prism(roundedRect(pocketL, pocketW, 0).fuse(roundedRect(lx + 2, Math.min(4, pocketW - 2), 0)).translate(0, y), high + 2, t)));
+      }
+      floorBlocked.push({ x: p.batteryX, y: p.batteryY, hw: hx + 1, hh: hy + 1 });
+      notes.push({ level: 'info', key: 'note.battery', vars: { n, l: round1(lx), w: round1(ly) } });
+    }
+  }
+
   // --- openings -------------------------------------------------------------
   for (const o of p.openings) {
     const { drawings, hw, hh } = openingContour(o);
@@ -734,6 +774,18 @@ export function* buildEnclosure(p: EnclosureParams): Build {
       soloCuts.push(place(tool, wall, o.offset));
     } else {
       for (const d of drawings) cuts.push(wallPrism(d, wall, o.offset, zc, hw));
+    }
+    if (o.type === 'cable') {
+      // Strain relief: just inside the wall the cable lies on a post, and a cable tie through the post holds it down.
+      const top = zc - hw;
+      const face = -wall.dist + t;
+      if (top - t < 4.5) warn('note.noRoomAnchor');
+      else {
+        const block = (x: number, y0: number, y1: number, z0: number, z1: number) => prism(roundedRect(2 * x, y1 - y0, 0).translate(0, (y0 + y1) / 2), z1 - z0, z0);
+        adds.push(place(block(4, face + 2, face + 8, t - 0.1, top), wall, o.offset));
+        soloCuts.push(place(block(5, face + 3, face + 7, top - 3, top - 1.2), wall, o.offset));
+        if (!notes.some((n) => n.key === 'note.cableAnchor')) notes.push({ level: 'info', key: 'note.cableAnchor' });
+      }
     }
     wallBlocked.get(wall)!.push({ x: o.offset, y: zc, hw: hw + 2, hh: hh + 2 });
   }

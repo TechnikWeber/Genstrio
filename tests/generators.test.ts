@@ -351,6 +351,38 @@ describe('enclosure', () => {
     expect(warnings(run('enclosure', { ...plain, pcb: false, height: 20, lidFix: 'bolt' }).result)).toEqual(['note.noRoomBolt']);
   });
 
+  it('makes a tray for batteries and holds a cable with a tie', () => {
+    const bare = volumes({ ...plain, pcb: false, length: 130 })[0];
+    const { result } = run('enclosure', { ...plain, pcb: false, length: 130, battery: 'aa', batteryCount: 2, batteryX: 20 });
+    expect(warnings(result)).toEqual([]);
+    const body = result.parts[0].shape;
+    expect(body.solids.length).toBe(1);
+    expect(measureVolume(body)).toBeGreaterThan(bare + 500);
+    expect(result.notes.find((n) => n.key === 'note.battery')?.vars).toMatchObject({ n: 2, l: 60.7, w: 35 });
+    // An AA cell lies in each pocket, with room to spare at the ends for the contacts; a fatter cell does not fit.
+    const cell = (d: number, y: number) => makeCylinder(d / 2, 50.5, [20 - 25.25, y, 2 + 7.3], [1, 0, 0]) as Shape3D;
+    for (const y of [-8.35, 8.35]) {
+      expect(measureVolume(body.clone().intersect(cell(14.5, y))), String(y)).toBeLessThan(0.001);
+      expect(measureVolume(body.clone().intersect(cell(17, y))), String(y)).toBeGreaterThan(5);
+    }
+    expect(measureVolume(body.clone().intersect(cell(14.5, 0)))).toBeGreaterThan(5);
+    // Turned, the cells lie across; too large a tray is not built.
+    const turned = run('enclosure', { ...plain, pcb: false, battery: 'aaa', batteryCount: 3, batteryTurn: true }).result;
+    expect(warnings(turned)).toEqual([]);
+    expect(measureVolume(turned.parts[0].shape.clone().intersect(makeCylinder(5.25, 44.5, [0, -22.25, 2 + 5.3], [0, 1, 0]) as Shape3D))).toBeLessThan(0.001);
+    expect(warnings(run('enclosure', { ...plain, pcb: false, battery: 'c18650', batteryCount: 4, length: 60 }).result)).toEqual(['note.batteryOutside']);
+
+    // A cable entry is a hole with a post behind it that a tie goes through.
+    const hole = volumes({ ...plain, pcb: false, openings: [opening({ type: 'round', face: 'left', diameter: 5, height: 14 })] })[0];
+    const relief = run('enclosure', { ...plain, pcb: false, openings: [opening({ type: 'cable', face: 'left', diameter: 5, height: 14 })] }).result;
+    expect(warnings(relief)).toEqual([]);
+    expect(relief.notes.map((n) => n.key)).toContain('note.cableAnchor');
+    // Post 8 × 6 × 11.5 mm less the slot for the tie
+    expect(measureVolume(relief.parts[0].shape) - hole).toBeCloseTo(8 * 6 * 11.5 - 8 * 4 * 1.8, -1.2);
+    expect(relief.parts[0].shape.solids.length).toBe(1);
+    expect(warnings(run('enclosure', { ...plain, pcb: false, openings: [opening({ type: 'cable', face: 'left', diameter: 5, height: 4 })] }).result)).toEqual(['note.noRoomAnchor']);
+  });
+
   it('puts standoffs on the hole pattern of a known board', () => {
     const bare = volumes({ ...plain, pcb: false, length: 140 })[0];
     const uno = volumes({ ...plain, pcbBoard: 'uno', length: 140 })[0];
@@ -515,6 +547,20 @@ describe('adapter', () => {
     expect(() => run('adapter', { ...tee, std3: 'hose25' })).toThrow(ParamError);
     // An elbow has no branch.
     expect(run('adapter', { ...tee, angle: 45 }).result.notes.map((n) => n.key)).not.toContain('note.branch');
+  });
+
+  it('branches to both sides as a cross', () => {
+    const cross: Params = { std1: 'hose13', len1: 28, std2: 'hose13', len2: 28, branch: 'cross', std3: 'hose13', len3: 28, transition: 4, wall: 2 };
+    const shape = run('adapter', cross).result.parts[0].shape;
+    expect(shape.solids.length).toBe(1);
+    const [[x0], [x1]] = shape.boundingBox.bounds;
+    expect(x0).toBeCloseTo(-x1, 1);
+    expect(x1).toBeGreaterThan(6.35 + 28);
+    const middle = 28 + (12.7 + 4) / 2;
+    for (const dir of [1, -1]) expect(measureVolume(shape.clone().intersect(makeCylinder(4.2, 60, [0, 0, middle], [dir, 0, 0]) as Shape3D)), String(dir)).toBeLessThan(0.01);
+    expect(measureVolume(shape.clone().intersect(makeCylinder(4.2, 120, [0, 0, -5], [0, 0, 1]) as Shape3D))).toBeLessThan(0.01);
+    // Sideways, across the branches, there is wall.
+    expect(measureVolume(shape.clone().intersect(makeCylinder(4.2, 60, [0, 0, middle], [0, 1, 0]) as Shape3D))).toBeGreaterThan(5);
   });
 
   it('builds every adapter template cleanly', () => {
@@ -815,6 +861,34 @@ describe('hook', () => {
     const rail = one(run('hook', { type: 'clip', diameter: 16, count: 3, spacing: 30 }).result);
     expect(rail.solids.length).toBe(1);
     expect(size(rail)[0]).toBeCloseTo(90, 1);
+  });
+
+  it('clamps a pipe between a saddle and a screwed cap', () => {
+    const { result } = run('hook', { type: 'clamp', diameter: 25, width: 18, thickness: 4, plateThickness: 4, screwCount: 1, screwDiameter: 4, countersunk: false });
+    expect(warnings(result)).toEqual([]);
+    expect(result.parts.map((part) => part.name)).toEqual(['hook', 'cap']);
+    const [saddle, cap] = result.parts;
+    expect(saddle.shape.solids.length).toBe(1);
+    expect(cap.shape.solids.length).toBe(1);
+    // Apart for printing, both lying on their side
+    expect(measureVolume(saddle.shape.clone().intersect(cap.shape.clone()))).toBeLessThan(0.001);
+    expect(size(cap.shape)[2]).toBeCloseTo(18, 3);
+    // Fitted, they leave a round hole for the pipe between them, 8 mm from the wall.
+    const lid = cap.shape.clone().translate(cap.assembled!.offset) as Shape3D;
+    expect(measureVolume(saddle.shape.clone().intersect(lid.clone()))).toBeLessThan(0.001);
+    const cx = saddle.shape.boundingBox.bounds[0][0] + 4 + 4 + 12.65;
+    const pipe = (d: number) => makeCylinder(d / 2, 30, [cx, 0, -5], [0, 0, 1]) as Shape3D;
+    for (const part of [saddle.shape, lid]) {
+      expect(measureVolume(part.clone().intersect(pipe(25)))).toBeLessThan(0.001);
+      expect(measureVolume(part.clone().intersect(pipe(26.5)))).toBeGreaterThan(2);
+    }
+    // Two screws pass the cap beside the pipe and bite into the saddle.
+    for (const side of [-1, 1]) {
+      const screw = (d: number, from: number, len: number) => makeCylinder(d / 2, len, [from, side * (12.65 + 4.8), 9], [1, 0, 0]) as Shape3D;
+      expect(measureVolume(lid.clone().intersect(screw(4, cx, 30))), String(side)).toBeLessThan(0.001);
+      expect(measureVolume(saddle.shape.clone().intersect(screw(2.6, cx - 10, 10))), String(side)).toBeLessThan(0.001);
+      expect(measureVolume(saddle.shape.clone().intersect(screw(4, cx - 10, 10))), String(side)).toBeGreaterThan(5);
+    }
   });
 
   it('builds every hook template cleanly', () => {
