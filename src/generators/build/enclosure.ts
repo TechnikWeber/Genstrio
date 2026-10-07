@@ -1,4 +1,4 @@
-import { draw, drawCircle, drawPolysides, makeCylinder, type Drawing, type Shape3D, type Sketch } from 'replicad';
+import { draw, drawCircle, drawPolysides, makeCompound, makeCylinder, type Drawing, type Shape3D, type Sketch } from 'replicad';
 import { BOARDS } from '../boards';
 import type { Note } from '../types';
 import { layoutText, textSolid } from './text';
@@ -49,7 +49,8 @@ export interface EnclosureParams {
   pcbScrew: ScrewSize;
   pcbHole: 'selftap' | 'insert';
   lid: boolean;
-  lidFix: 'screws' | 'snap' | 'twist' | 'none';
+  lidFix: 'screws' | 'snap' | 'twist' | 'bolt' | 'none';
+  boltWidth: number;
   lidScrew: ScrewSize;
   lidHole: 'selftap' | 'insert';
   lidHead: 'flat' | 'countersunk' | 'counterbore';
@@ -70,6 +71,7 @@ export interface EnclosureParams {
   hingeCount: number;
   hingeWidth: number;
   hingePin: number;
+  hingeType: 'pin' | 'clip';
   gasket: boolean;
   gasketWidth: number;
   openings: Opening[];
@@ -360,6 +362,8 @@ export function* buildEnclosure(p: EnclosureParams): Build {
   // Tools that are cut on their own, so a neighbouring cutter cannot upset them.
   const soloCuts: Shape3D[] = [];
   const lidThreadCuts: Shape3D[] = [];
+  // Parts that move in the lid and print in place with it
+  const lidLoose: Shape3D[] = [];
   // Areas that vents must leave alone
   const floorBlocked: Rect[] = [];
   const lidBlocked: Rect[] = [];
@@ -484,7 +488,10 @@ export function* buildEnclosure(p: EnclosureParams): Build {
     const d = backWall.dist;
     const gap = 0.4;
     const play = 0.3; // between neighbouring knuckles
-    const kr = p.hingePin / 2 + 2.2;
+    // Snapped in, the lid turns on an axle of its own, which must not be too thin to print.
+    const clip = p.hingeType === 'clip';
+    const axle = clip ? Math.max(p.hingePin, 3) / 2 : p.hingePin / 2;
+    const kr = axle + 2.2;
     const yc = -d - gap - kr; // pin axis, modelled at the front wall
     const za = H - kr; // knuckles end flush with the top of the lid, which prints face down
     const span = backWall.width - 2 * cornerR - 4;
@@ -509,6 +516,18 @@ export function* buildEnclosure(p: EnclosureParams): Build {
       for (let i = 0; i < n; i++) {
         const u = (i - (n - 1) / 2) * (span / n);
         const side = w / 4 - play / 2;
+        if (clip) {
+          // The body carries one knuckle, open towards the back and up at 45°: the mouth is narrower than the axle, which snaps in.
+          adds.push(place(knuckle(gusset, -side, 2 * side), backWall, u));
+          cuts.push(place(makeCylinder(axle + 0.2, 2 * side + 2, [-side - 1, yc, za], X) as Shape3D, backWall, u));
+          const m = axle * 0.85 * Math.SQRT1_2;
+          const far = (kr + 1) * Math.SQRT1_2;
+          soloCuts.push(place(yzPrism([[yc + m, za + m], [yc - m, za - m], [yc - m - far, za - m + far], [yc + m - far, za + m + far]], -side - 1, 2 * side + 2), backWall, u));
+          // The lid carries two tabs with the axle between them.
+          const tabs = knuckle(tab, -w / 2, side).fuse(knuckle(tab, w / 2 - side, side)) as Shape3D;
+          lidAdds.push(place(tabs.fuse(makeCylinder(axle, w, [-w / 2, yc, za], X) as Shape3D) as Shape3D, backWall, u));
+          continue;
+        }
         adds.push(place(knuckle(gusset, -w / 2, side).fuse(knuckle(gusset, w / 2 - side, side)) as Shape3D, backWall, u));
         lidAdds.push(place(knuckle(tab, -side, 2 * side), backWall, u));
         cuts.push(place(pin(), backWall, u));
@@ -517,7 +536,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
       // The lip near the hinge would jam against the back wall as the lid swings open.
       const m = t + clr + 1.6 * lipH + gap + kr;
       lipTrim = place(prism(roundedRect(backWall.width + 4, m + 1, 0).translate(0, -d + (m - 1) / 2), lipH + 2, hb - lipH - 1), backWall, 0);
-      notes.push({ level: 'info', key: 'note.hinge', vars: { n, pin: p.hingePin, len: round1(w) } });
+      notes.push(clip ? { level: 'info', key: 'note.hingeClip', vars: { n } } : { level: 'info', key: 'note.hinge', vars: { n, pin: p.hingePin, len: round1(w) } });
     }
   }
 
@@ -611,6 +630,54 @@ export function* buildEnclosure(p: EnclosureParams): Build {
       }
       notes.push({ level: 'info', key: 'note.snaps', vars: { n: pads.length, s: round1(s) } });
     }
+  }
+
+  // --- sliding bolts ---------------------------------------------------------
+  // A bolt in a sleeve on the edge of the lid, printed in place: the lid prints
+  // face down, so sleeve and bolt both stand on the bed. Pushed down, the bolt
+  // enters a keeper on the wall and holds the lid shut.
+  if (hasLid && p.lidFix === 'bolt') {
+    const flat = (dir: number) => out.walls.find((wall) => !wall.curved && Math.abs(wall.dir - dir) < 1e-6);
+    // A hinged lid only needs holding at the front; a loose one at the front and the back.
+    const walls = (hinged ? [flat(0)] : [flat(0), flat(180)]).filter((wall): wall is Wall => !!wall);
+    const play = Math.max(0.3, clr + 0.1);
+    const [gap, inner, thick, outer, side] = [0.4, 1.2, 4, 1.6, 1.6];
+    const [sleeve, travel] = [14, 5];
+    const bw = Math.min(p.boltWidth, ...walls.map((wall) => wall.width - 2 * cornerR - 8));
+    const box = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => prism(roundedRect(x1 - x0, y1 - y0, 0).translate((x0 + x1) / 2, (y0 + y1) / 2), z1 - z0, z0);
+    for (const wall of walls) {
+      const d = wall.dist;
+      // Outwards from the wall: gap, sleeve, play, bolt, play, sleeve
+      const y0 = -d - gap;
+      const y1 = y0 - inner;
+      const yb = y1 - play;
+      const y2 = yb - thick - play;
+      const y3 = y2 - outer;
+      const cx = bw / 2 + play;
+      const hx = cx + side;
+      const low = H - sleeve;
+      // The keeper sits below the sleeve, on a 45° gusset so it prints without support.
+      const top = low - 0.5;
+      const foot = top - travel - 2;
+      const reach = -d + 0.2 - y3;
+      if (bw < 6 || foot - reach < 1) {
+        warn('note.noRoomBolt');
+        continue;
+      }
+      lidAdds.push(place(box(-hx, hx, y3, y0, low, H).fuse(box(-hx, hx, y0 - 0.1, -d + 0.3, hb, H)) as Shape3D, wall, 0));
+      // Channel, then the slot for the thumb piece: they meet, so each is cut on its own.
+      const knob = play + outer + 2.5;
+      const grip = H - 2.5;
+      lidThreadCuts.push(place(box(-cx, cx, y2, y1, low - 1, H + 1), wall, 0));
+      lidThreadCuts.push(place(box(-2.5 - play, 2.5 + play, y3 - 1, y2 + 0.1, grip - knob - travel - play, grip + play), wall, 0));
+      // The thumb piece slopes on the side that faces down while printing.
+      const bolt = box(-bw / 2, bw / 2, yb - thick, yb, low, H).fuse(yzPrism([[yb - thick + 0.2, grip], [yb - thick + 0.2, grip - knob], [yb - thick - knob, grip - knob]], -2.5, 5)) as Shape3D;
+      lidLoose.push(place(bolt, wall, 0));
+      adds.push(place(box(-hx, hx, y3, -d + 0.2, foot, top).fuse(yzPrism([[-d + 0.2, foot - reach], [-d + 0.2, foot + 0.2], [y3, foot + 0.2]], -hx, 2 * hx)) as Shape3D, wall, 0));
+      soloCuts.push(place(box(-cx - 0.1, cx + 0.1, y2 - 0.1, y1 + 0.1, foot - 1, top + 1), wall, 0));
+    }
+    if (walls.length) notes.push({ level: 'info', key: 'note.lidBolt', vars: { n: walls.length } });
+    else warn('note.noRoomBolt');
   }
 
   // --- openings -------------------------------------------------------------
@@ -775,6 +842,7 @@ export function* buildEnclosure(p: EnclosureParams): Build {
 
     // Flip it over for printing: outside face on the bed, next to the body.
     const offset: [number, number, number] = [body.boundingBox.bounds[1][0] + 10 + out.hx, 0, H + proud];
+    if (lidLoose.length) lid = makeCompound([lid, ...lidLoose]) as Shape3D;
     parts.push({ name: 'lid', shape: lid.rotate(180, O, Y).translate(...offset), assembled: { flip: true, offset: [offset[0], 0, H + lift + proud] } });
     yield { label: 'stage.lid', parts };
   }

@@ -23,6 +23,16 @@ export interface AdapterParams {
   barbCount2: number;
   barbHeight2: number;
   barbPitch2: number;
+  branch: 'none' | 'tee';
+  std3: string;
+  d3: number;
+  fit3: Fit;
+  len3: number;
+  barbs3: boolean;
+  barbCount3: number;
+  barbHeight3: number;
+  barbPitch3: number;
+  branchAngle: number;
   wall: number;
   transition: number;
   clearance: number;
@@ -131,9 +141,17 @@ export function* buildAdapter(p: AdapterParams): Build {
     return { count: fits, height, pitch };
   };
 
+  // A branch needs a straight stretch of run to leave from; it follows end 1.
+  const branched = p.branch === 'tee' && p.angle <= 0;
+  const third = branched ? resolveEnd(p.std3, p.d3, p.fit3, p.wall, p.clearance) : null;
+  if (third && third.ro > a.ro + 0.01) throw new ParamError('err.branchLarge');
+  const slant = (p.branchAngle * Math.PI) / 180;
+  const run = third ? (2 * third.ro) / Math.sin(slant) + 2 * p.wall : 0;
+  const len1 = p.len1 + run;
+
   // End 1 stands on the bed, z grows towards end 2.
-  const outerA = sleeveOuter(a.ro, p.len1, barbsFor(1, a, p.barbs1, p.len1, p.barbCount1, p.barbHeight1, p.barbPitch1), c1[0]);
-  const innerA: RZ[] = [[a.ri, p.len1], [a.ri, c1[1]], [a.ri + c1[1], 0]];
+  const outerA = sleeveOuter(a.ro, len1, barbsFor(1, a, p.barbs1, p.len1, p.barbCount1, p.barbHeight1, p.barbPitch1), c1[0]);
+  const innerA: RZ[] = [[a.ri, len1], [a.ri, c1[1]], [a.ri + c1[1], 0]];
   const topB = lt + p.len2;
   const outerB: RZ[] = [
     [a.ro, 0],
@@ -148,14 +166,14 @@ export function* buildAdapter(p: AdapterParams): Build {
   let shape: Shape3D;
   if (p.angle <= 0) {
     yield { label: 'stage.end1', parts: [{ name: 'adapter', shape: revolve([...outerA, ...innerA]) }] };
-    shape = revolve([...outerA, ...shift(outerB, p.len1), ...shift(innerB, p.len1), ...innerA]);
+    shape = revolve([...outerA, ...shift(outerB, len1), ...shift(innerB, len1), ...innerA]);
   } else {
     const R = Math.max(p.bendRadius, a.ro + 1);
     if (R > p.bendRadius) notes.push({ level: 'info', key: 'note.bendRadiusRaised', vars: { r: round1(R) } });
-    const centre: Vec3 = [R, 0, p.len1];
+    const centre: Vec3 = [R, 0, len1];
     bend = (part) => part.rotate(p.angle, centre, [0, 1, 0]);
     const sweep = (rad: number) =>
-      (drawCircle(rad).sketchOnPlane('XY', p.len1) as Sketch).revolve([0, 1, 0], { origin: centre, angle: p.angle }) as Shape3D;
+      (drawCircle(rad).sketchOnPlane('XY', len1) as Sketch).revolve([0, 1, 0], { origin: centre, angle: p.angle }) as Shape3D;
 
     shape = revolve([...outerA, ...innerA]);
     yield { label: 'stage.end1', parts: [{ name: 'adapter', shape }] };
@@ -163,15 +181,36 @@ export function* buildAdapter(p: AdapterParams): Build {
     shape = shape.fuse(sweep(a.ro).cut(sweep(a.ri))) as Shape3D;
     yield { label: 'stage.bend', parts: [{ name: 'adapter', shape }] };
 
-    shape = shape.fuse(bend(revolve([...outerB, ...innerB]).translate(0, 0, p.len1))) as Shape3D;
+    shape = shape.fuse(bend(revolve([...outerB, ...innerB]).translate(0, 0, len1))) as Shape3D;
     notes.push({ level: 'info', key: 'note.bendNeedsSupport' });
   }
 
-  const upright = (part: Shape3D) => bend(part.rotate(180, [0, 0, 0], [1, 0, 0]).translate(0, 0, p.len1 + topB));
-  const thread1 = threadOf(a, p.len1);
+  const upright = (part: Shape3D) => bend(part.rotate(180, [0, 0, 0], [1, 0, 0]).translate(0, 0, len1 + topB));
+  const thread1 = threadOf(a, len1);
   const thread2 = threadOf(b, p.len2);
   for (const part of [thread1.add, thread2.add && upright(thread2.add)]) if (part) shape = shape.fuse(part) as Shape3D;
   for (const part of [thread1.cut, thread2.cut && upright(thread2.cut)]) if (part) shape = shape.cut(part) as Shape3D;
+
+  if (third) {
+    // Modelled like end 1, open end down, long enough to reach the axis of the run; then swung out from it.
+    const c3 = chamfers(third, false);
+    const reach = a.ro / Math.sin(slant) + third.ro / Math.tan(slant) + 1;
+    const total = p.len3 + reach;
+    const outward = (part: Shape3D) =>
+      part
+        .translate(0, 0, -total)
+        .rotate(p.branchAngle + 180, [0, 0, 0], [0, 1, 0])
+        .translate(0, 0, p.len1 + run / 2) as Shape3D;
+    const outer = sleeveOuter(third.ro, total, barbsFor(3, third, p.barbs3, p.len3, p.barbCount3, p.barbHeight3, p.barbPitch3), c3[0]);
+    shape = shape.fuse(outward(revolve([[0, 0], ...outer, [0, total]]))) as Shape3D;
+    const thread3 = threadOf(third, p.len3);
+    if (thread3.add) shape = shape.fuse(outward(thread3.add)) as Shape3D;
+    // Open the branch into the run, and the run again where the branch filled it.
+    shape = shape.cut(outward(revolve([[0, -1], [third.ri + c3[1], -1], [third.ri + c3[1], 0], [third.ri, c3[1]], [third.ri, total], [0, total]]))) as Shape3D;
+    shape = shape.cut(makeCylinder(a.ri, run + 1, [0, 0, p.len1 - 0.5]) as Shape3D) as Shape3D;
+    if (thread3.cut) shape = shape.cut(outward(thread3.cut)) as Shape3D;
+    notes.push({ level: 'info', key: 'note.branch', vars: { a: p.branchAngle } });
+  }
 
   if (p.flange !== 'none') {
     const th = Math.min(p.flangeThickness, p.len1);
@@ -203,7 +242,7 @@ export function* buildAdapter(p: AdapterParams): Build {
   }
 
   // The entered diameter always stays the mating surface; the wall grows away from it.
-  for (const [n, e] of [[1, a], [2, b]] as const) {
+  for (const [n, e] of [[1, a], [2, b], ...(third ? [[3, third] as const] : [])] as const) {
     const vars: Record<string, number> = e.thread ? { n, d: round2(e.d), pitch: round2(e.thread.pitch) } : { n, d: round1(e.d), id: round2(e.ri * 2), od: round2(e.ro * 2) };
     notes.push({ level: 'info', key: `note.adapterEnd.${e.kind}`, vars });
   }

@@ -1,43 +1,14 @@
 import { strToU8, zipSync } from 'fflate';
 import type { Shape3D } from 'replicad';
+import { weldedMesh } from '../generators/build/common';
 
 export interface WeldedMesh {
   vertices: Float32Array;
   triangles: Uint32Array;
 }
 
-/**
- * Tessellate a shape into an indexed mesh whose faces share vertices.
- * OpenCascade meshes every face on its own, so seams have duplicate vertices;
- * slicers read those as open edges unless they are merged.
- */
-export function meshPart(shape: Shape3D, tolerance: number): WeldedMesh {
-  const raw = shape.mesh({ tolerance, angularTolerance: 0.2 });
-  const index = new Map<string, number>();
-  const vertices: number[] = [];
-  const remap = new Uint32Array(raw.vertices.length / 3);
-  for (let i = 0; i < remap.length; i++) {
-    const x = raw.vertices[3 * i];
-    const y = raw.vertices[3 * i + 1];
-    const z = raw.vertices[3 * i + 2];
-    const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
-    let id = index.get(key);
-    if (id === undefined) {
-      id = vertices.length / 3;
-      index.set(key, id);
-      vertices.push(x, y, z);
-    }
-    remap[i] = id;
-  }
-  const triangles: number[] = [];
-  for (let i = 0; i < raw.triangles.length; i += 3) {
-    const a = remap[raw.triangles[i]];
-    const b = remap[raw.triangles[i + 1]];
-    const c = remap[raw.triangles[i + 2]];
-    if (a !== b && b !== c && a !== c) triangles.push(a, b, c);
-  }
-  return { vertices: new Float32Array(vertices), triangles: new Uint32Array(triangles) };
-}
+/** Tessellate a shape into an indexed mesh whose faces share vertices. */
+export const meshPart = (shape: Shape3D, tolerance: number): WeldedMesh => weldedMesh(shape, tolerance);
 
 /** Smooth normals for a mesh with shared vertices: the mean of the faces around each. */
 export function vertexNormals({ vertices, triangles }: WeldedMesh): Float32Array {

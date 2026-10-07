@@ -102,6 +102,8 @@ export const ENCLOSURE_TEMPLATES: Record<string, Params> = {
   beaglebone: boardCase('beaglebone', 'M3', 4, 17, []),
   // A plain project box with a hinged, sealed lid
   hinged: { length: 140, width: 90, height: 50, wall: 3, pcb: false, lidFix: 'snap', hinge: true, hingeCount: 2, gasket: true, gasketWidth: 1.5, openings: [{ type: 'gland', face: 'left', thread: 'M16', height: 22 }], lidVent: 'none' },
+  // No screws, no pin: the lid snaps into its hinge and a bolt, printed in place on it, locks the front
+  latched: { length: 120, width: 80, height: 45, wall: 2.4, pcb: false, lidFix: 'bolt', hinge: true, hingeType: 'clip', hingePin: 4, lidVent: 'none', openings: [] },
   // Round sensor housing with a twist-lock lid
   round: { shape: 'round', diameter: 80, height: 40, pcb: false, lidFix: 'twist', openings: [{ type: 'gland', face: 'back', thread: 'PG7', height: 16 }], lidVent: 'holes', lidVentSize: 2.5 },
   speaker: { length: 100, width: 100, height: 50, pcb: false, lidVent: 'none', openings: [{ type: 'speaker', face: 'lid', speaker: '66' }, { type: 'usbc', face: 'back', height: 8 }] },
@@ -124,6 +126,12 @@ export const ADAPTER_TEMPLATES: Record<string, Params> = {
   drainElbow: { std1: 'ht40', len1: 35, std2: 'ht40', len2: 35, wall: 2.4, angle: 45, bendRadius: 45 },
   // Duct connection screwed to a wall or panel
   ductFlange: { std1: 'custom', d1: 100, fit1: 'inside', len1: 15, std2: 'custom', d2: 100, fit2: 'inside', barbs2: false, len2: 40, flange: 'end1', flangeDiameter: 140, flangeThickness: 3, flangeHoles: 4, transition: 0 },
+  // Three hoses meet: the branch leaves the run at a right angle
+  hoseTee: { std1: 'hose13', barbs1: true, len1: 28, std2: 'hose13', barbs2: true, len2: 28, branch: 'tee', std3: 'hose13', barbs3: true, len3: 28, transition: 4 },
+  // A Y-piece splits one hose into two
+  hoseY: { std1: 'hose19', barbs1: true, len1: 30, std2: 'hose13', barbs2: true, len2: 28, branch: 'tee', branchAngle: 45, std3: 'hose13', barbs3: true, len3: 28, transition: 8 },
+  // Tee for 40 mm drain pipe with a 32 mm branch
+  drainTee: { std1: 'ht40', len1: 30, std2: 'ht40', len2: 30, branch: 'tee', std3: 'ht32', len3: 25, wall: 2.4, transition: 4 },
 };
 
 // Drawer sizes are typical inner dimensions; furniture differs, so measure before printing.
@@ -163,6 +171,10 @@ export const HOOK_TEMPLATES: Record<string, Params> = {
   shelf: { type: 'bracket', width: 30, thickness: 6, reach: 120, tipHeight: 0, plateHeight: 110, plateThickness: 6, rib: 5 },
   door: { mount: 'door', width: 25, thickness: 5, reach: 30, tipHeight: 20, plateHeight: 70, plateThickness: 3 },
   pegboard: { mount: 'pegboard', width: 12, thickness: 5, reach: 40, tipHeight: 12, plateHeight: 45 },
+  // Snaps onto a 20 mm pipe; the screw goes in through the open front
+  pipeClip: { type: 'clip', diameter: 20, width: 15, thickness: 3, plateThickness: 3, screwCount: 1, countersunk: false },
+  // Three cables or pipes side by side on one rail
+  clipRail: { type: 'clip', diameter: 16, width: 12, thickness: 2.4, plateThickness: 3, count: 3, spacing: 30, screwCount: 2 },
   towel: { mount: 'tape', width: 40, thickness: 5, reach: 25, tipHeight: 18, angle: 0, bend: 8, plateHeight: 60, plateThickness: 3 },
 };
 
@@ -188,6 +200,11 @@ export const GEAR_TEMPLATES: Record<string, Params> = {
   pinion: { module: 1, teeth: 14, thickness: 8, bore: 'd', boreDiameter: 5.1, boreFlat: 0.5, hubHeight: 6, hubDiameter: 10 },
   rack: { kind: 'rack', rackTeeth: 16, thickness: 8 },
   ring: { kind: 'ring', teeth: 40, rim: 4 },
+  // Two bevel gears turn the drive round a corner
+  bevel: { kind: 'bevel', module: 1.5, teeth: 16, teeth2: 24, thickness: 8 },
+  miter: { kind: 'bevel', module: 1.5, teeth: 20, teeth2: 20, thickness: 8 },
+  // One turn of the worm moves the wheel on by one tooth: 1 : 30, and it holds its position
+  worm: { kind: 'worm', module: 1.5, teeth: 30, wormStarts: 1, wormDiameter: 16, wormLength: 30, thickness: 10, pressureAngle: '25', backlash: 0.15 },
   // Sun 14, three planets of 13, ring 40: one turn of the carrier for 3.86 of the sun
   planetary: { kind: 'planetary', module: 1.5, teeth: 14, planetTeeth: 13, planets: 3, thickness: 8, bore: 'd', boreDiameter: 5.1 },
   planetaryHerringbone: { kind: 'planetary', module: 1.5, teeth: 12, planetTeeth: 12, planets: 3, thickness: 10, helix: 20, herringbone: true },
@@ -211,6 +228,8 @@ export const RELIEF_TEMPLATES: Record<string, Params> = {
   stencil: { shape: 'star', size: 80, style: 'cutout', plateThickness: 1.2, padding: 10 },
   ornament: { shape: 'moon', size: 70, style: 'shape', relief: 3 },
   stamp: { shape: 'star', size: 30, mirror: true, relief: 2, plateThickness: 4, padding: 2, plateShape: 'ellipse' },
+  // Heights follow the darkness of the picture, with soft transitions; best with a picture of your own
+  heightmap: { shape: 'flower', size: 70, style: 'heightmap', relief: 4, plateThickness: 1.6, smooth: 4 },
 };
 
 export const CUTTER_TEMPLATES: Record<string, Params> = {
@@ -229,9 +248,13 @@ export const LITHOPHANE_TEMPLATES: Record<string, Params> = {
   // A shade around a small lamp or an LED tea light
   lamp: { form: 'cylinder', diameter: 70, border: 3 },
   frame: { width: 150, border: 5, maxThickness: 3.2 },
-  stand: { width: 120, border: 3, stand: 'base' },
+  stand: { width: 120, border: 3, foot: 5, stand: 'base' },
+  // Leaning back a little, picture and base printed as one, braced by two struts
+  joined: { width: 120, border: 3, foot: 5, tilt: 10, stand: 'base', standPrint: 'joined', struts: 2, strutHeight: 35 },
   // Curved, with a seat behind it for a battery light of 68 mm
-  light: { form: 'arc', width: 140, angle: 110, border: 3, stand: 'light', lightDiameter: 68, lightThickness: 25, lightDistance: 50 },
+  light: { form: 'arc', width: 140, angle: 110, border: 3, foot: 5, stand: 'light', lightDiameter: 68, lightThickness: 25, lightDistance: 50 },
+  lightJoined: { form: 'arc', width: 140, angle: 110, border: 3, foot: 5, tilt: 8, stand: 'light', standPrint: 'joined', lightDiameter: 68, lightThickness: 25, lightDistance: 55 },
+  teaLight: { form: 'arc', width: 110, angle: 140, border: 3, foot: 5, stand: 'light', lightSeat: 'flat', lightDiameter: 38, lightDistance: 30 },
   lampE27: { form: 'cylinder', diameter: 90, border: 4, mount: 'e27' },
   lampE14: { form: 'cylinder', diameter: 70, border: 4, mount: 'e14' },
 };

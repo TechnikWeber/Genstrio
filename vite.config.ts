@@ -18,5 +18,6 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version), __APP_COMMIT__: JSON.stringify(commit) },
   worker: { format: 'es' },
   build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
-  test: { testTimeout: 60_000 },
+  // The CAD kernel is slow in places, and slower still while the test files run side by side.
+  test: { testTimeout: 240_000 },
 });

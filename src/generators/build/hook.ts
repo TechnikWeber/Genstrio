@@ -3,7 +3,8 @@ import type { Note } from '../types';
 import { cutAll, fuseAll, revolveZ, round1, roundedBox, type Build } from './common';
 
 export interface HookParams {
-  type: 'hook' | 'cradle' | 'bracket';
+  type: 'hook' | 'cradle' | 'clip' | 'bracket';
+  clipOpening: number;
   width: number;
   thickness: number;
   reach: number;
@@ -102,6 +103,8 @@ export function* buildHook(p: HookParams): Build {
   let clearFrom: number; // screws go above this height …
   let clearTo: number; // … and below this one
   let plateH = p.plateHeight;
+  // How much material a screw passes: the plate, and for a clip the back of its ring.
+  let through = tb;
   if (p.type === 'hook') {
     const up = p.tipHeight > 0 ? 90 - p.angle : 0;
     const radius = p.bend + t / 2;
@@ -117,6 +120,19 @@ export function* buildHook(p: HookParams): Build {
     plateH = Math.max(plateH, centre + 4);
     [clearFrom, clearTo] = [centre, plateH];
     notes.push({ level: 'info', key: 'note.cradleSize', vars: { d: round1(p.diameter) } });
+  } else if (p.type === 'clip') {
+    // A ring, open at the front, that a pipe snaps into. Its back sinks a little into the plate.
+    const radius = p.diameter / 2 + 0.15 + t / 2;
+    const half = (p.clipOpening / 2) * (Math.PI / 180);
+    plateH = Math.max(plateH, 2 * radius + t + 4);
+    const cx = tb + radius + t / 2 - 0.6;
+    const cy = plateH / 2;
+    arm = slab(stroke([cx + radius * Math.cos(half), cy + radius * Math.sin(half)], p.clipOpening / 2 + 90, t, [{ turn: 360 - p.clipOpening, radius }]), w);
+    // The screws go through the back of the ring, reached through its open front.
+    through = tb + t - 0.6;
+    [clearFrom, clearTo] = [cy - p.diameter / 2 - 1.5, cy + p.diameter / 2 + 1.5];
+    notes.push({ level: 'info', key: 'note.clipSize', vars: { d: round1(p.diameter), g: round1((p.diameter + 0.3) * Math.sin(half)) } });
+    if (p.clipOpening > 150) notes.push({ level: 'info', key: 'note.clipLoose' });
   } else {
     const end = tb + p.reach;
     plateH = Math.max(plateH, t + 10);
@@ -181,8 +197,8 @@ export function* buildHook(p: HookParams): Build {
     const [lo, hi] = [clearFrom + head + 1.5, clearTo - head - 1.5];
     if (hi < lo || !room) notes.push({ level: 'warn', key: 'note.noRoomScrews' });
     else {
-      const sink = p.countersunk ? Math.min(d / 2, tb - 0.6) : 0;
-      const tool = revolveZ([[0, -1], [d / 2, -1], [d / 2, tb - sink], [d / 2 + sink, tb], [d / 2 + sink, tb + 0.5], [0, tb + 0.5]]).rotate(90, [0, 0, 0], [0, 1, 0]) as Shape3D;
+      const sink = p.countersunk ? Math.min(d / 2, through - 0.6) : 0;
+      const tool = revolveZ([[0, -1], [d / 2, -1], [d / 2, through - sink], [d / 2 + sink, through], [d / 2 + sink, through + 0.5], [0, through + 0.5]]).rotate(90, [0, 0, 0], [0, 1, 0]) as Shape3D;
       const spots: [number, number][] = rail ? spread(n, p.spacing / 2, length - p.spacing / 2).map((z) => [(lo + hi) / 2, z]) : spread(n, lo, hi).map((y) => [y, beside]);
       for (const [y, z] of spots) cuts.push(tool.clone().translate(0, y, z) as Shape3D);
       notes.push({ level: 'info', key: p.countersunk ? 'note.hookScrewsSunk' : 'note.hookScrews', vars: { n: spots.length, d } });

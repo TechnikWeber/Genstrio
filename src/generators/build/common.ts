@@ -11,7 +11,7 @@ export interface Part {
   /** Positions at which the preview shows the part, optionally turned about Z by a fourth value in degrees. Exports contain it once. */
   instances?: Placement[];
   /** How the preview moves the part from its print position into the assembly: turned over about Y, then shifted. */
-  assembled?: { flip: boolean; offset: Vec3; /** Several places for a part that is fitted more than once, each optionally turned about Z. */ places?: Placement[] };
+  assembled?: { flip: boolean; offset: Vec3; /** Tipped over about Y by this many degrees, for a part whose axis lies across. */ tilt?: number; /** Several places for a part that is fitted more than once, each optionally turned about Z. */ places?: Placement[] };
 }
 
 /** Triangles with shared corners, for what a CAD solid would be too heavy for. */
@@ -67,10 +67,13 @@ export function roundedBox(l: number, w: number, r: number, h: number, z = 0): S
   return prism(roundedRect(l, w, r), h, z);
 }
 
-/** Regions (outlines in mm with their holes) as one solid, h high from z. */
-export function regionsSolid(regions: Region[], h: number, z = 0): Shape3D {
+/**
+ * Regions (outlines in mm with their holes) as one solid, h high from z.
+ * `lean` moves the top sideways by that much per unit of height.
+ */
+export function regionsSolid(regions: Region[], h: number, z = 0, lean: Pt = [0, 0]): Shape3D {
   const wire = (loop: Pt[]) => assembleWire(loop.map(([x, y], i) => makeLine([x, y, z], [...loop[(i + 1) % loop.length], z])));
-  const solids = regions.map(({ outer, holes }) => basicFaceExtrusion(makeFace(wire(outer), holes.map(wire)), new Vector([0, 0, h])) as Shape3D);
+  const solids = regions.map(({ outer, holes }) => basicFaceExtrusion(makeFace(wire(outer), holes.map(wire)), new Vector([lean[0] * h, lean[1] * h, h])) as Shape3D);
   return solids.length === 1 ? solids[0] : (makeCompound(solids) as Shape3D);
 }
 
@@ -195,3 +198,36 @@ export function cutAll(shape: Shape3D, tools: Shape3D[]): Shape3D {
 }
 
 export const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * Tessellate a shape into a mesh whose faces share vertices. The kernel
+ * meshes every face on its own, so seams have duplicate vertices; slicers
+ * read those as open edges unless they are merged.
+ */
+export function weldedMesh(shape: Shape3D, tolerance: number): { vertices: Float32Array; triangles: Uint32Array } {
+  const raw = shape.mesh({ tolerance, angularTolerance: 0.2 });
+  const index = new Map<string, number>();
+  const vertices: number[] = [];
+  const remap = new Uint32Array(raw.vertices.length / 3);
+  for (let i = 0; i < remap.length; i++) {
+    const x = raw.vertices[3 * i];
+    const y = raw.vertices[3 * i + 1];
+    const z = raw.vertices[3 * i + 2];
+    const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+    let id = index.get(key);
+    if (id === undefined) {
+      id = vertices.length / 3;
+      index.set(key, id);
+      vertices.push(x, y, z);
+    }
+    remap[i] = id;
+  }
+  const triangles: number[] = [];
+  for (let i = 0; i < raw.triangles.length; i += 3) {
+    const a = remap[raw.triangles[i]];
+    const b = remap[raw.triangles[i + 1]];
+    const c = remap[raw.triangles[i + 2]];
+    if (a !== b && b !== c && a !== c) triangles.push(a, b, c);
+  }
+  return { vertices: new Float32Array(vertices), triangles: new Uint32Array(triangles) };
+}

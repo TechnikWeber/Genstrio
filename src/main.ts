@@ -161,8 +161,10 @@ const shareEl = $<HTMLButtonElement>('#share');
 
 // --- worker -----------------------------------------------------------------
 
-const worker = new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' });
+const startWorker = () => new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' });
+let worker = startWorker();
 const post = (req: Request) => worker.postMessage(req);
+let restarted = 0;
 
 let requestId = 0;
 let buildId = 0;
@@ -220,8 +222,21 @@ function scheduleRebuild() {
   timer = window.setTimeout(rebuild, 120);
 }
 
-worker.onmessage = (event: MessageEvent<Response>) => {
+const onMessage = (event: MessageEvent<Response>) => {
   const msg = event.data;
+  // The CAD kernel never gives memory back; after very many models it runs out and stops for good.
+  // A fresh one takes its place, and the model is built again.
+  if (msg.type === 'error' && !msg.key && /abort|out of memory|unreachable|out of bounds/i.test(msg.message) && Date.now() - restarted > 20_000) {
+    restarted = Date.now();
+    worker.terminate();
+    worker = startWorker();
+    worker.onmessage = onMessage;
+    engineReady = false;
+    setExporting(false);
+    setStatus('app.loading', true);
+    rebuild();
+    return;
+  }
   if (msg.type === 'ready') {
     engineReady = true;
     return;
@@ -235,8 +250,17 @@ worker.onmessage = (event: MessageEvent<Response>) => {
   }
   if (msg.type === 'error') {
     console.error(msg.message);
+    const failedExport = exporting;
     setExporting(false);
-    if (msg.id !== buildId) return;
+    if (msg.id !== buildId) {
+      // An export went wrong: the model stays, with a word about why.
+      if (failedExport) {
+        lastNotes = { notes: lastNotes.notes, error: msg.key ?? 'err.generic' };
+        renderNotes();
+        notesBox.open = true;
+      }
+      return;
+    }
     lastNotes = { notes: [], error: msg.key ?? 'err.generic' };
     renderNotes();
     setStatus(msg.key ?? 'err.generic', false);
@@ -255,6 +279,8 @@ worker.onmessage = (event: MessageEvent<Response>) => {
     setStatus('app.done', false, { ms: msg.ms });
   }
 };
+
+worker.onmessage = onMessage;
 
 // --- export -----------------------------------------------------------------
 

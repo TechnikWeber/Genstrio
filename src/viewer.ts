@@ -130,6 +130,7 @@ export class Viewer {
         for (const object of [mesh, lines]) {
           object.position.set(x, y, z);
           if (fitted?.flip) object.rotation.y = Math.PI;
+          else if (fitted?.tilt) object.rotation.y = (fitted.tilt * Math.PI) / 180;
           object.rotation.z = (turn * Math.PI) / 180;
         }
         this.model.add(mesh, lines);

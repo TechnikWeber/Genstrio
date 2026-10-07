@@ -1,7 +1,8 @@
 import { drawCircle, drawEllipse, type Drawing, type Shape3D } from 'replicad';
 import { decodeImage, type Bitmap } from '../image';
 import type { Note } from '../types';
-import { cutAll, ParamError, prism, regionsSolid, round1, roundedRect, type Build, type Part } from './common';
+import { cutAll, ParamError, prism, regionsSolid, round1, roundedRect, type Build, type Part, type TriMesh } from './common';
+import { lithophaneMesh, type LithophaneParams } from './lithophane';
 import { countPoints, distanceField, frameOf, sampleMask, traceRegions, traceWithin, type Region, type SampleShape } from './trace';
 
 export interface ReliefParams {
@@ -11,7 +12,7 @@ export interface ReliefParams {
   threshold: number;
   smooth: number;
   size: number;
-  style: 'raised' | 'engraved' | 'cutout' | 'shape';
+  style: 'raised' | 'engraved' | 'cutout' | 'shape' | 'heightmap';
   relief: number;
   separate: boolean;
   mirror: boolean;
@@ -34,9 +35,32 @@ export function sourceBitmap(p: { shape: string; image: string }): Bitmap {
 // More corners than this and the boolean operations take many seconds.
 const MAX_POINTS = 1600;
 
+/**
+ * A relief whose height follows the darkness of the picture, with every
+ * shade in between: the same sheet a lithophane is, laid on its back.
+ */
+function heightmap(p: ReliefParams, bitmap: Bitmap): { mesh: TriMesh; width: number; height: number } {
+  const ink = p.shape === 'image' && p.invert ? bitmap.data.map((v) => 255 - v) : bitmap.data;
+  const scale = p.size / Math.max(bitmap.width, bitmap.height);
+  const sheet = lithophaneMesh(
+    // Ink is height, where a lithophane makes brightness thin.
+    { form: 'flat', width: bitmap.width * scale, border: 0, minThickness: p.plateThickness, maxThickness: p.plateThickness + p.relief, smoothing: p.smooth, mirror: p.mirror, negative: true } as LithophaneParams,
+    { width: bitmap.width, height: bitmap.height, data: ink },
+  );
+  const v = sheet.mesh.vertices;
+  // Standing, its thickness points to −y; lying, it points up.
+  for (let i = 0; i < v.length; i += 3) [v[i + 1], v[i + 2]] = [v[i + 2] - sheet.height / 2, -v[i + 1]];
+  return { mesh: { vertices: v, triangles: sheet.mesh.triangles }, width: sheet.width, height: sheet.height };
+}
+
 export function* buildRelief(p: ReliefParams): Build {
   const notes: Note[] = [];
   const bitmap = sourceBitmap(p);
+  if (p.style === 'heightmap') {
+    const { mesh, width, height } = heightmap(p, bitmap);
+    notes.push({ level: 'info', key: 'note.plateSize', vars: { w: round1(width), h: round1(height), t: round1(p.plateThickness + p.relief) } }, { level: 'info', key: 'note.heightmap' });
+    return { parts: [], meshes: [{ name: 'relief', mesh }], notes };
+  }
   const perPixel = p.size / Math.max(bitmap.width, bitmap.height);
   const options = { threshold: p.threshold / 100, invert: p.shape === 'image' && p.invert, smooth: p.smooth, pad: (p.padding + 4) / perPixel + 4 };
   const field = distanceField(bitmap, options);

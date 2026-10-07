@@ -93,7 +93,8 @@ export const enclosure: GeneratorMeta = {
     { key: 'pcbHole', group: 'pcb', type: 'select', options: ['selftap', 'insert'], default: 'selftap', showIf: hasPcb },
 
     { key: 'lid', group: 'lid', type: 'bool', default: true },
-    { key: 'lidFix', group: 'lid', type: 'select', options: ['screws', 'snap', 'twist', 'none'], default: 'screws', showIf: hasLid },
+    { key: 'lidFix', group: 'lid', type: 'select', options: ['screws', 'snap', 'twist', 'bolt', 'none'], default: 'screws', showIf: hasLid },
+    { key: 'boltWidth', group: 'lid', type: 'number', min: 6, max: 30, sliderMax: 20, step: 0.5, default: 10, unit: 'mm', showIf: (p) => hasLid(p) && p.lidFix === 'bolt' },
     { key: 'lidScrew', group: 'lid', type: 'select', options: SCREW_SIZES, default: 'M3', showIf: lidScrewed },
     { key: 'lidHole', group: 'lid', type: 'select', options: ['selftap', 'insert'], default: 'selftap', showIf: lidScrewed },
     { key: 'lidHead', group: 'lid', type: 'select', options: ['flat', 'countersunk', 'counterbore'], default: 'flat', showIf: lidScrewed },
@@ -103,6 +104,7 @@ export const enclosure: GeneratorMeta = {
     { key: 'lidThickness', group: 'lid', type: 'number', min: 0.8, max: 10, sliderMax: 6, step: 0.1, default: 2, unit: 'mm', showIf: hasLid },
     { key: 'clearance', group: 'lid', type: 'number', min: 0, max: 1, step: 0.05, default: 0.2, unit: 'mm', fit: true, showIf: hasLid },
     { key: 'hinge', group: 'lid', type: 'bool', default: false, showIf: hasLid },
+    { key: 'hingeType', group: 'lid', type: 'select', options: ['pin', 'clip'], default: 'pin', showIf: hinged },
     { key: 'hingeCount', group: 'lid', type: 'number', min: 1, max: 4, step: 1, default: 2, showIf: hinged },
     { key: 'hingeWidth', group: 'lid', type: 'number', min: 10, max: 120, sliderMax: 60, step: 1, default: 24, unit: 'mm', showIf: hinged },
     { key: 'hingePin', group: 'lid', type: 'number', min: 1, max: 6, step: 0.05, default: 1.75, unit: 'mm', showIf: hinged },
@@ -142,11 +144,12 @@ export const enclosure: GeneratorMeta = {
 
 const bent = (p: Params) => (p.angle as number) > 0;
 const flanged = (p: Params) => p.flange !== 'none';
+const branched = (p: Params) => !bent(p) && p.branch === 'tee';
 
 const STANDARDS = ['custom', ...Object.keys(FITTINGS)];
 
 /** The parameters of one adapter end. */
-const end = (n: 1 | 2, d: number, fit: string, barbs: boolean): FieldDef[] => {
+const end = (n: 1 | 2 | 3, d: number, fit: string, barbs: boolean): FieldDef[] => {
   const group = `end${n}`;
   const custom = (p: Params) => p[`std${n}`] === 'custom';
   const plugs = (p: Params) => (custom(p) ? p[`fit${n}`] === 'inside' : FITTINGS[p[`std${n}`] as string]?.fit === 'inside' && !FITTINGS[p[`std${n}`] as string]?.thread);
@@ -169,6 +172,11 @@ export const adapter: GeneratorMeta = {
   params: [
     ...end(1, 32, 'over', false),
     ...end(2, 40, 'inside', true),
+
+    { key: 'branch', group: 'end3', type: 'select', options: ['none', 'tee'], default: 'none', showIf: (p) => !bent(p) },
+    // A third end, only there with a branch
+    ...end(3, 20, 'inside', true).map((def): FieldDef => ({ ...def, showIf: (p) => branched(p) && (def.showIf?.(p) ?? true) })),
+    { key: 'branchAngle', group: 'end3', type: 'number', min: 30, max: 90, step: 5, default: 90, unit: '°', showIf: branched },
 
     { key: 'wall', group: 'body', type: 'number', min: 0.4, max: 50, sliderMax: 10, step: 0.1, default: 2, unit: 'mm' },
     { key: 'transition', group: 'body', type: 'number', min: 0, max: 500, sliderMax: 100, step: 1, default: 10, unit: 'mm' },
@@ -289,12 +297,13 @@ export const hook: GeneratorMeta = {
   id: 'hook',
   templates: HOOK_TEMPLATES,
   params: [
-    { key: 'type', group: 'shape', type: 'select', options: ['hook', 'cradle', 'bracket'], default: 'hook' },
+    { key: 'type', group: 'shape', type: 'select', options: ['hook', 'cradle', 'clip', 'bracket'], default: 'hook' },
     { key: 'width', group: 'shape', type: 'number', min: 4, max: 200, sliderMax: 60, step: 1, default: 20, unit: 'mm' },
     { key: 'thickness', group: 'shape', type: 'number', min: 2, max: 30, sliderMax: 12, step: 0.5, default: 5, unit: 'mm' },
-    { key: 'reach', group: 'shape', type: 'number', min: 5, max: 400, sliderMax: 150, step: 1, default: 30, unit: 'mm', showIf: (p) => !is('type', 'cradle')(p) },
-    { key: 'diameter', group: 'shape', type: 'number', min: 5, max: 300, sliderMax: 100, step: 0.5, default: 30, unit: 'mm', showIf: is('type', 'cradle') },
-    { key: 'tipHeight', group: 'shape', type: 'number', min: 0, max: 150, sliderMax: 50, step: 1, default: 15, unit: 'mm' },
+    { key: 'reach', group: 'shape', type: 'number', min: 5, max: 400, sliderMax: 150, step: 1, default: 30, unit: 'mm', showIf: (p) => !is('type', 'cradle', 'clip')(p) },
+    { key: 'diameter', group: 'shape', type: 'number', min: 5, max: 300, sliderMax: 100, step: 0.5, default: 30, unit: 'mm', showIf: is('type', 'cradle', 'clip') },
+    { key: 'clipOpening', group: 'shape', type: 'number', min: 60, max: 170, step: 5, default: 110, unit: '°', showIf: is('type', 'clip') },
+    { key: 'tipHeight', group: 'shape', type: 'number', min: 0, max: 150, sliderMax: 50, step: 1, default: 15, unit: 'mm', showIf: (p) => !is('type', 'clip')(p) },
     { key: 'angle', group: 'shape', type: 'number', min: 0, max: 45, step: 1, default: 10, unit: '°', showIf: isHook },
     { key: 'bend', group: 'shape', type: 'number', min: 1, max: 60, sliderMax: 25, step: 0.5, default: 5, unit: 'mm', showIf: (p) => isHook(p) && (p.tipHeight as number) > 0 },
     { key: 'rib', group: 'shape', type: 'number', min: 0, max: 30, sliderMax: 12, step: 0.5, default: 4, unit: 'mm', showIf: isBracket },
@@ -349,18 +358,24 @@ const isSpur = is('kind', 'spur');
 const isRack = is('kind', 'rack');
 const isPlanetary = is('kind', 'planetary');
 const round = (p: Params) => p.kind !== 'rack';
-const shafted = is('kind', 'spur', 'planetary');
+const twistable = is('kind', 'spur', 'ring', 'planetary');
+const isWorm = is('kind', 'worm');
+const shafted = is('kind', 'spur', 'planetary', 'bevel', 'worm');
+const hubbed = is('kind', 'spur', 'planetary', 'worm');
 const bored = (p: Params) => shafted(p) && p.bore !== 'none';
 
 export const gear: GeneratorMeta = {
   id: 'gear',
   templates: GEAR_TEMPLATES,
   params: [
-    { key: 'kind', group: 'teeth', type: 'select', options: ['spur', 'ring', 'planetary', 'rack'], default: 'spur' },
+    { key: 'kind', group: 'teeth', type: 'select', options: ['spur', 'ring', 'planetary', 'bevel', 'worm', 'rack'], default: 'spur' },
     // The module is a size in mm by definition, whatever unit the lengths are shown in.
     { key: 'module', group: 'teeth', type: 'number', min: 0.3, max: 10, sliderMax: 5, step: 0.05, default: 1.5 },
     { key: 'teeth', group: 'teeth', type: 'number', min: 6, max: 200, sliderMax: 80, step: 1, default: 20, showIf: round },
-    { key: 'teeth2', group: 'teeth', type: 'number', min: 0, max: 200, sliderMax: 80, step: 1, default: 0, showIf: isSpur },
+    { key: 'teeth2', group: 'teeth', type: 'number', min: 0, max: 200, sliderMax: 80, step: 1, default: 0, showIf: is('kind', 'spur', 'bevel') },
+    { key: 'wormStarts', group: 'teeth', type: 'number', min: 1, max: 4, step: 1, default: 1, showIf: isWorm },
+    { key: 'wormDiameter', group: 'teeth', type: 'number', min: 6, max: 100, sliderMax: 40, step: 0.5, default: 16, unit: 'mm', showIf: isWorm },
+    { key: 'wormLength', group: 'teeth', type: 'number', min: 8, max: 250, sliderMax: 80, step: 1, default: 30, unit: 'mm', showIf: isWorm },
     { key: 'planetTeeth', group: 'teeth', type: 'number', min: 6, max: 100, sliderMax: 40, step: 1, default: 13, showIf: isPlanetary },
     { key: 'planets', group: 'teeth', type: 'number', min: 2, max: 8, step: 1, default: 3, showIf: isPlanetary },
     { key: 'rim', group: 'teeth', type: 'number', min: 1.5, max: 40, sliderMax: 15, step: 0.5, default: 4, unit: 'mm', showIf: is('kind', 'ring', 'planetary') },
@@ -368,15 +383,15 @@ export const gear: GeneratorMeta = {
     { key: 'rackHeight', group: 'teeth', type: 'number', min: 1, max: 50, sliderMax: 20, step: 0.5, default: 6, unit: 'mm', showIf: isRack },
     { key: 'thickness', group: 'teeth', type: 'number', min: 1, max: 100, sliderMax: 30, step: 0.5, default: 8, unit: 'mm' },
     { key: 'pressureAngle', group: 'teeth', type: 'select', options: ['14.5', '20', '25'], default: '20' },
-    { key: 'helix', group: 'teeth', type: 'number', min: 0, max: 45, step: 1, default: 0, unit: '°', showIf: round },
-    { key: 'herringbone', group: 'teeth', type: 'bool', default: false, showIf: (p) => round(p) && (p.helix as number) > 0 },
+    { key: 'helix', group: 'teeth', type: 'number', min: 0, max: 45, step: 1, default: 0, unit: '°', showIf: twistable },
+    { key: 'herringbone', group: 'teeth', type: 'bool', default: false, showIf: (p) => twistable(p) && (p.helix as number) > 0 },
     { key: 'backlash', group: 'teeth', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, unit: 'mm' },
 
     { key: 'bore', group: 'bore', type: 'select', options: ['none', 'round', 'd', 'hex', 'square'], default: 'round', showIf: shafted },
     { key: 'boreDiameter', group: 'bore', type: 'number', min: 1, max: 100, sliderMax: 30, step: 0.05, default: 5, unit: 'mm', showIf: bored },
     { key: 'boreFlat', group: 'bore', type: 'number', min: 0.1, max: 10, sliderMax: 3, step: 0.05, default: 0.5, unit: 'mm', showIf: (p) => shafted(p) && p.bore === 'd' },
-    { key: 'hubHeight', group: 'bore', type: 'number', min: 0, max: 50, sliderMax: 20, step: 0.5, default: 0, unit: 'mm', showIf: shafted },
-    { key: 'hubDiameter', group: 'bore', type: 'number', min: 3, max: 200, sliderMax: 60, step: 0.5, default: 12, unit: 'mm', showIf: (p) => shafted(p) && (p.hubHeight as number) > 0 },
+    { key: 'hubHeight', group: 'bore', type: 'number', min: 0, max: 50, sliderMax: 20, step: 0.5, default: 0, unit: 'mm', showIf: hubbed },
+    { key: 'hubDiameter', group: 'bore', type: 'number', min: 3, max: 200, sliderMax: 60, step: 0.5, default: 12, unit: 'mm', showIf: (p) => hubbed(p) && (p.hubHeight as number) > 0 },
     { key: 'carrier', group: 'bore', type: 'bool', default: true, showIf: isPlanetary },
     { key: 'pinDiameter', group: 'bore', type: 'number', min: 2, max: 30, sliderMax: 12, step: 0.1, default: 5, unit: 'mm', showIf: (p) => isPlanetary(p) && p.carrier === true },
   ],
@@ -420,7 +435,8 @@ const motif = (shape: string, size: number, smooth: number): FieldDef[] => [
   { key: 'size', group: 'motif', type: 'number', min: 10, max: 400, sliderMax: 200, step: 1, default: size, unit: 'mm' },
 ];
 
-const onReliefPlate = (p: Params) => p.style !== 'shape';
+const onReliefPlate = (p: Params) => p.style !== 'shape' && p.style !== 'heightmap';
+const reliefBase = (p: Params) => p.style !== 'shape';
 
 export const relief: GeneratorMeta = {
   id: 'relief',
@@ -429,12 +445,12 @@ export const relief: GeneratorMeta = {
     ...motif('star', 60, 1),
     { key: 'mirror', group: 'motif', type: 'bool', default: false },
 
-    { key: 'style', group: 'relief', type: 'select', options: ['raised', 'engraved', 'cutout', 'shape'], default: 'raised' },
+    { key: 'style', group: 'relief', type: 'select', options: ['raised', 'engraved', 'cutout', 'shape', 'heightmap'], default: 'raised' },
     { key: 'relief', group: 'relief', type: 'number', min: 0.2, max: 50, sliderMax: 10, step: 0.1, default: 1.2, unit: 'mm', showIf: (p) => p.style !== 'cutout' },
     { key: 'separate', group: 'relief', type: 'bool', default: false, showIf: is('style', 'raised', 'engraved') },
 
     { key: 'plateShape', group: 'plate', type: 'select', options: ['rect', 'ellipse', 'contour'], default: 'rect', showIf: onReliefPlate },
-    { key: 'plateThickness', group: 'plate', type: 'number', min: 0.4, max: 30, sliderMax: 10, step: 0.1, default: 2.4, unit: 'mm', showIf: onReliefPlate },
+    { key: 'plateThickness', group: 'plate', type: 'number', min: 0.4, max: 30, sliderMax: 10, step: 0.1, default: 2.4, unit: 'mm', showIf: reliefBase },
     { key: 'padding', group: 'plate', type: 'number', min: 0.5, max: 60, sliderMax: 30, step: 0.5, default: 5, unit: 'mm', showIf: onReliefPlate },
     { key: 'cornerRadius', group: 'plate', type: 'number', min: 0, max: 60, sliderMax: 20, step: 0.5, default: 3, unit: 'mm', showIf: (p) => onReliefPlate(p) && p.plateShape === 'rect' },
     { key: 'hole', group: 'plate', type: 'select', options: ['none', 'top', 'left', 'corners'], default: 'none', showIf: onReliefPlate },
@@ -471,6 +487,10 @@ const bentLitho = is('form', 'arc');
 const flatLitho = is('form', 'flat', 'arc');
 const lit = (p: Params) => flatLitho(p) && p.stand === 'light';
 
+const standing = (p: Params) => flatLitho(p) && p.stand !== 'none';
+const strutted = (p: Params) => standing(p) && (p.struts as number) > 0;
+const mounted = (p: Params) => p.form === 'cylinder' && p.mount !== 'none';
+
 export const lithophane: GeneratorMeta = {
   id: 'lithophane',
   templates: LITHOPHANE_TEMPLATES,
@@ -478,22 +498,37 @@ export const lithophane: GeneratorMeta = {
   params: [
     { key: 'image', group: 'picture', type: 'image', default: '', mode: 'photo', maxSize: 320 },
     { key: 'negative', group: 'picture', type: 'bool', default: false },
+    { key: 'mirror', group: 'picture', type: 'bool', default: false },
+    { key: 'brightness', group: 'picture', type: 'number', min: -50, max: 50, step: 1, default: 0, unit: '%' },
+    { key: 'contrast', group: 'picture', type: 'number', min: -50, max: 100, step: 1, default: 0, unit: '%' },
+    { key: 'smoothing', group: 'picture', type: 'number', min: 0, max: 5, step: 1, default: 0 },
 
     { key: 'form', group: 'form', type: 'select', options: ['flat', 'arc', 'cylinder'], default: 'flat' },
     { key: 'width', group: 'form', type: 'number', min: 20, max: 400, sliderMax: 250, step: 1, default: 100, unit: 'mm', showIf: flatLitho },
     { key: 'angle', group: 'form', type: 'number', min: 20, max: 270, step: 5, default: 90, unit: '°', showIf: bentLitho },
     { key: 'diameter', group: 'form', type: 'number', min: 20, max: 300, sliderMax: 200, step: 1, default: 70, unit: 'mm', showIf: is('form', 'cylinder') },
+    { key: 'tilt', group: 'form', type: 'number', min: 0, max: 30, step: 1, default: 0, unit: '°', showIf: flatLitho },
+    { key: 'reliefSide', group: 'form', type: 'select', options: ['outside', 'inside'], default: 'outside', showIf: is('form', 'arc', 'cylinder') },
 
     { key: 'minThickness', group: 'thickness', type: 'number', min: 0.3, max: 3, sliderMax: 2, step: 0.05, default: 0.6, unit: 'mm' },
     { key: 'maxThickness', group: 'thickness', type: 'number', min: 1, max: 8, sliderMax: 5, step: 0.1, default: 3, unit: 'mm' },
     { key: 'border', group: 'thickness', type: 'number', min: 0, max: 20, sliderMax: 10, step: 0.5, default: 2, unit: 'mm' },
+    { key: 'foot', group: 'thickness', type: 'number', min: 0, max: 40, sliderMax: 20, step: 0.5, default: 0, unit: 'mm' },
 
     { key: 'stand', group: 'holder', type: 'select', options: ['none', 'base', 'light'], default: 'none', showIf: flatLitho },
+    { key: 'standPrint', group: 'holder', type: 'select', options: ['separate', 'joined'], default: 'separate', showIf: standing },
+    { key: 'slotDepth', group: 'holder', type: 'number', min: 2, max: 20, sliderMax: 12, step: 0.5, default: 5, unit: 'mm', showIf: standing },
+    { key: 'slotPlay', group: 'holder', type: 'number', min: 0, max: 1, step: 0.05, default: 0.3, unit: 'mm', fit: true, showIf: (p) => standing(p) && p.standPrint === 'separate' },
+    { key: 'struts', group: 'holder', type: 'number', min: 0, max: 6, step: 1, default: 0, showIf: standing },
+    { key: 'strutHeight', group: 'holder', type: 'number', min: 5, max: 200, sliderMax: 100, step: 1, default: 30, unit: 'mm', showIf: strutted },
+    { key: 'strutDepth', group: 'holder', type: 'number', min: 5, max: 100, sliderMax: 60, step: 1, default: 18, unit: 'mm', showIf: strutted },
+    { key: 'lightSeat', group: 'holder', type: 'select', options: ['lean', 'flat'], default: 'lean', showIf: lit },
     { key: 'lightDiameter', group: 'holder', type: 'number', min: 20, max: 150, sliderMax: 100, step: 0.5, default: 68, unit: 'mm', showIf: lit },
-    { key: 'lightThickness', group: 'holder', type: 'number', min: 8, max: 80, sliderMax: 50, step: 0.5, default: 25, unit: 'mm', showIf: lit },
-    { key: 'lightTilt', group: 'holder', type: 'number', min: 0, max: 40, step: 1, default: 15, unit: '°', showIf: lit },
+    { key: 'lightThickness', group: 'holder', type: 'number', min: 8, max: 80, sliderMax: 50, step: 0.5, default: 25, unit: 'mm', showIf: (p) => lit(p) && p.lightSeat === 'lean' },
+    { key: 'lightTilt', group: 'holder', type: 'number', min: 0, max: 40, step: 1, default: 15, unit: '°', showIf: (p) => lit(p) && p.lightSeat === 'lean' },
     { key: 'lightDistance', group: 'holder', type: 'number', min: 15, max: 250, sliderMax: 120, step: 1, default: 45, unit: 'mm', showIf: lit },
     { key: 'mount', group: 'holder', type: 'select', options: ['none', 'e27', 'e14'], default: 'none', showIf: is('form', 'cylinder') },
+    { key: 'mountVents', group: 'holder', type: 'bool', default: true, showIf: mounted },
   ],
 };
 

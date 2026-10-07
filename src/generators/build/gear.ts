@@ -4,7 +4,7 @@ import { ParamError, prism, regionsSolid, round1, roundedRect, type Build, type 
 import type { Pt } from './trace';
 
 export interface GearParams {
-  kind: 'spur' | 'rack' | 'ring' | 'planetary';
+  kind: 'spur' | 'rack' | 'ring' | 'planetary' | 'bevel' | 'worm';
   module: number;
   teeth: number;
   teeth2: number;
@@ -25,6 +25,9 @@ export interface GearParams {
   planets: number;
   carrier: boolean;
   pinDiameter: number;
+  wormStarts: number;
+  wormDiameter: number;
+  wormLength: number;
 }
 
 const DEDENDUM = 1.25;
@@ -56,11 +59,16 @@ export function gearRadii(m: number, z: number, alpha: number, addendum = 1, ded
  * the arcs between them: one tooth is two flanks, a tip arc and a root arc.
  * A tooth is centred on the +X axis.
  */
-function gearDrawing(m: number, z: number, alpha: number, { addendum, dedendum, backlash }: Profile, turn: number, coarse = false): { drawing: Drawing; tip: number } {
-  const { pitch, base, tip: fullTip, root } = gearRadii(m, z, alpha, addendum, dedendum);
+function gearDrawing(m: number, z: number, alpha: number, { addendum, dedendum, backlash }: Profile, turn: number, coarse = false, cone = 0): { drawing: Drawing; tip: number } {
+  // The teeth of a bevel gear have the form of a larger gear, the one its
+  // back cone unrolls to: by the cosine of the cone angle more teeth, drawn
+  // in a plane that leans by that angle. Seen along the axis they are as much
+  // lower, and each spans as much more of the circle.
+  const lean = Math.cos(cone);
+  const { pitch, base, tip: fullTip, root } = gearRadii(m, z / lean, alpha, addendum, dedendum);
   const inv = (a: number) => Math.tan(a) - a;
   // Half the angle a tooth spans at radius r
-  const half = (r: number) => (Math.PI * m / 2 - backlash) / (2 * pitch) + inv(alpha) - (r > base ? inv(Math.acos(base / r)) : 0);
+  const half = (r: number) => ((Math.PI * m / 2 - backlash) / (2 * pitch) + inv(alpha) - (r > base ? inv(Math.acos(base / r)) : 0)) / lean;
   // Few teeth at a steep angle would come to a point before the full height: stop where a land is left.
   let tip = fullTip;
   for (let i = 0; i < 40 && half(tip) * tip < 0.1 * m; i++) tip -= 0.02 * m;
@@ -72,7 +80,8 @@ function gearDrawing(m: number, z: number, alpha: number, { addendum, dedendum, 
   radii[0] = start;
   radii[steps] = tip;
   if (root < start - 1e-6) radii.unshift(root);
-  const polar = (r: number, a: number): Pt => [r * Math.cos(a + turn), r * Math.sin(a + turn)];
+  const seen = (r: number) => (m * z) / 2 + (r - pitch) * lean;
+  const polar = (r: number, a: number): Pt => [seen(r) * Math.cos(a + turn), seen(r) * Math.sin(a + turn)];
 
   let pen = draw(polar(root, -half(root)));
   for (let i = 0; i < z; i++) {
@@ -82,7 +91,7 @@ function gearDrawing(m: number, z: number, alpha: number, { addendum, dedendum, 
     for (const r of [...radii].reverse().slice(1)) pen = pen.lineTo(polar(r, centre + half(r)));
     const next = centre + (2 * Math.PI) / z;
     if (i < z - 1) pen = pen.threePointsArcTo(polar(root, next - half(root)), polar(root, centre + Math.PI / z));
-    else return { drawing: pen.threePointsArcTo(polar(root, -half(root)), polar(root, centre + Math.PI / z)).done(), tip };
+    else return { drawing: pen.threePointsArcTo(polar(root, -half(root)), polar(root, centre + Math.PI / z)).done(), tip: seen(tip) };
   }
   throw new ParamError('err.generic');
 }
@@ -223,6 +232,113 @@ function* buildPlanetary(p: GearParams): Build {
   return { parts, notes };
 }
 
+/**
+ * A straight bevel gear standing on its large end. All its teeth run towards
+ * one point on the axis, the tip of the pitch cone, so the outline at the top
+ * is the one at the bottom, only smaller.
+ */
+function bevelSolid(p: GearParams, z: number, cone: number, turn: number): { shape: Shape3D; tip: number; apex: number; face: number } {
+  const alpha = (Number(p.pressureAngle) * Math.PI) / 180;
+  const m = p.module;
+  const pitch = (m * z) / 2;
+  const distance = pitch / Math.sin(cone);
+  const face = Math.min(p.thickness, distance * 0.4);
+  // Tips a little short of the full height keep clear of the root of a small mating gear, where its flank is not relieved.
+  const { drawing, tip } = gearDrawing(m, z, alpha, { ...external(p), addendum: 0.9 }, turn, false, cone);
+  const top = drawing.scale(1 - face / distance, [0, 0]).sketchOnPlane('XY', face * Math.cos(cone)) as Sketch;
+  let shape = (drawing.sketchOnPlane('XY', 0) as Sketch).loftWith(top, { ruled: true }) as Shape3D;
+  const bore = boreDrawing(p);
+  if (bore) shape = shape.cut(prism(bore, face + 2, -1)) as Shape3D;
+  return { shape, tip, apex: pitch / Math.tan(cone), face };
+}
+
+function buildBevel(p: GearParams): { parts: Part[]; notes: Note[] } {
+  const z2 = p.teeth2 > 0 ? p.teeth2 : p.teeth;
+  // The two pitch cones share their tip and touch along a line; for axes at a right angle their half angles add up to 90°.
+  const cone = Math.atan(p.teeth / z2);
+  const first = bevelSolid(p, p.teeth, cone, Math.PI - Math.PI / p.teeth);
+  const second = bevelSolid(p, z2, Math.PI / 2 - cone, 0);
+  const apart = first.tip + second.tip + 3;
+  const notes: Note[] = [{ level: 'info', key: 'note.bevel', vars: { a: round1((cone * 180) / Math.PI), b: round1(90 - (cone * 180) / Math.PI), i: Math.round((z2 / p.teeth) * 1000) / 1000, h1: round1(second.apex), h2: round1(first.apex) } }];
+  if (first.face < p.thickness - 0.01) notes.push({ level: 'info', key: 'note.bevelFace', vars: { b: round1(first.face) } });
+  return {
+    parts: [
+      { name: 'gear', shape: first.shape, assembled: { flip: false, offset: [0, 0, 0] } },
+      // Fitted, the second gear stands on its side, its axis crossing the first one at the shared tip of the cones.
+      { name: 'gear2', shape: second.shape.translate([apart, 0, 0]) as Shape3D, assembled: { flip: false, tilt: 90, offset: [-second.apex, 0, first.apex + apart] } },
+    ],
+    notes,
+  };
+}
+
+/**
+ * A worm: its thread has straight flanks along the axis, so across the axis
+ * each flank is a spiral whose radius grows evenly with the angle. That
+ * outline, twisted once per lead, is the worm.
+ */
+function wormSolid(p: GearParams): { shape: Shape3D; lead: number; tip: number } {
+  const alpha = (Number(p.pressureAngle) * Math.PI) / 180;
+  const m = p.module;
+  const starts = p.wormStarts;
+  const pitch = p.wormDiameter / 2;
+  const lead = starts * Math.PI * m;
+  const tip = pitch + m;
+  const root = pitch - DEDENDUM * m;
+  const bore = p.bore === 'none' ? 0 : p.boreDiameter / 2;
+  if (root < Math.max(1.5, bore + 1.2)) throw new ParamError('err.wormThin');
+  const thickness = (Math.PI * m) / 2 - p.backlash;
+  const half = (r: number) => (Math.PI / lead) * (thickness - 2 * (r - pitch) * Math.tan(alpha));
+  const radii = Array.from({ length: 6 }, (_, k) => root + ((tip - root) * k) / 5);
+  const polar = (r: number, a: number): Pt => [r * Math.cos(a), r * Math.sin(a)];
+  let pen = draw(polar(root, -half(root)));
+  for (let k = 0; k < starts; k++) {
+    const centre = (2 * Math.PI * k) / starts;
+    for (const r of radii.slice(1)) pen = pen.lineTo(polar(r, centre - half(r)));
+    pen = pen.threePointsArcTo(polar(tip, centre + half(tip)), polar(tip, centre));
+    for (const r of [...radii].reverse().slice(1)) pen = pen.lineTo(polar(r, centre + half(r)));
+    const next = centre + (2 * Math.PI) / starts;
+    pen = pen.threePointsArcTo(polar(root, k < starts - 1 ? next - half(root) : -half(root)), polar(root, centre + Math.PI / starts));
+  }
+  let shape = (pen.done().sketchOnPlane('XY', 0) as Sketch).extrude(p.wormLength, { twistAngle: (360 * p.wormLength) / lead }) as Shape3D;
+  const hole = boreDrawing(p);
+  if (hole) shape = shape.cut(prism(hole, p.wormLength + 2, -1)) as Shape3D;
+  return { shape, lead, tip };
+}
+
+// How worm and wheel sit to each other when fitted; found by trying which way round nothing collides.
+const WORM_FIT = { hand: 1, thread: 1 };
+
+function buildWorm(p: GearParams): { parts: Part[]; notes: Note[] } {
+  const m = p.module;
+  const alpha = (Number(p.pressureAngle) * Math.PI) / 180;
+  const worm = wormSolid(p);
+  // The wheel is a helical gear whose teeth slant by the lead angle of the worm.
+  const leadAngle = Math.atan(worm.lead / (Math.PI * p.wormDiameter));
+  const wheelPitch = (m * p.teeth) / 2;
+  const twist = WORM_FIT.hand * ((p.thickness * Math.tan(leadAngle)) / wheelPitch) * (180 / Math.PI);
+  // A tooth of the wheel points at the worm (towards −y) half way up.
+  const wheel = gearSolid({ ...p, herringbone: false }, p.teeth, -Math.PI / 2 - ((twist / 2) * Math.PI) / 180, twist);
+  const distance = p.wormDiameter / 2 + wheelPitch;
+  const apart = wheel.tip + worm.tip + 4;
+  // Along the worm, the gap that faces the wheel nearest to its middle
+  const step = worm.lead / p.wormStarts;
+  let gap = (WORM_FIT.thread * worm.lead) / 4 + step / 2;
+  gap += Math.round((p.wormLength / 2 - gap) / step) * step;
+  const notes: Note[] = [
+    { level: 'info', key: 'note.worm', vars: { a: Math.round(distance * 100) / 100, i: Math.round((p.teeth / p.wormStarts) * 100) / 100, g: round1((leadAngle * 180) / Math.PI) } },
+    { level: 'info', key: 'note.wormPrint' },
+  ];
+  if (p.backlash < 0.1) notes.push({ level: 'info', key: 'note.gearBacklash' });
+  return {
+    parts: [
+      { name: 'wheel', shape: wheel.shape, assembled: { flip: false, offset: [0, 0, 0] } },
+      // Fitted, the worm lies beside the wheel, its axis level with the middle of the teeth.
+      { name: 'worm', shape: worm.shape.translate([apart, 0, 0]) as Shape3D, assembled: { flip: false, tilt: 90, offset: [-gap, -distance, p.thickness / 2 + apart] } },
+    ],
+    notes,
+  };
+}
+
 function buildRack(p: GearParams): { part: Part; notes: Note[] } {
   const m = p.module;
   const alpha = (Number(p.pressureAngle) * Math.PI) / 180;
@@ -249,6 +365,8 @@ export function* buildGear(p: GearParams): Build {
     return { parts: [part], notes };
   }
   if (p.kind === 'planetary') return yield* buildPlanetary(p);
+  if (p.kind === 'bevel') return buildBevel(p);
+  if (p.kind === 'worm') return buildWorm(p);
   const m = p.module;
   const alpha = (Number(p.pressureAngle) * Math.PI) / 180;
   const notes: Note[] = [];
