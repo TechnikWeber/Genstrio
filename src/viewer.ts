@@ -61,7 +61,8 @@ export class Viewer {
   private resize() {
     const { clientWidth: w, clientHeight: h } = this.container;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    // Only the drawing buffer; the stylesheet sizes the element.
+    this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.needsRender = true;
