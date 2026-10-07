@@ -498,6 +498,7 @@ export const lithophane: GeneratorMeta = {
   params: [
     { key: 'image', group: 'picture', type: 'image', default: '', mode: 'photo', maxSize: 320 },
     { key: 'negative', group: 'picture', type: 'bool', default: false },
+    { key: 'rotate', group: 'picture', type: 'select', options: ['0', '90', '180', '270'], default: '0' },
     { key: 'mirror', group: 'picture', type: 'bool', default: false },
     { key: 'brightness', group: 'picture', type: 'number', min: -50, max: 50, step: 1, default: 0, unit: '%' },
     { key: 'contrast', group: 'picture', type: 'number', min: -50, max: 100, step: 1, default: 0, unit: '%' },

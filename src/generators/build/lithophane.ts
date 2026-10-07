@@ -8,6 +8,7 @@ import { samplePhoto } from './trace';
 export interface LithophaneParams {
   image: string;
   negative: boolean;
+  rotate: '0' | '90' | '180' | '270';
   mirror: boolean;
   brightness: number;
   contrast: number;
@@ -65,6 +66,23 @@ function resample(src: Picture, width: number, height: number): Picture {
   return { width, height, data };
 }
 
+/** Turn a picture clockwise by a quarter, a half or three quarters of a turn. */
+export function turned(src: Picture, by: string | undefined): Picture {
+  if (by !== '90' && by !== '180' && by !== '270') return src;
+  const swap = by !== '180';
+  const width = swap ? src.height : src.width;
+  const height = swap ? src.width : src.height;
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // Where this pixel comes from in the picture as it was
+      const [sx, sy] = by === '90' ? [y, src.height - 1 - x] : by === '180' ? [src.width - 1 - x, src.height - 1 - y] : [src.width - 1 - y, x];
+      data[y * width + x] = src.data[sy * src.width + sx];
+    }
+  }
+  return { width, height, data };
+}
+
 /** Brightness and contrast, mirroring, and a blur that takes the grain out of a photo. */
 function adjust(src: Picture, p: LithophaneParams): Picture {
   const { width, height } = src;
@@ -109,7 +127,8 @@ export interface Lithophane {
  * ground. One vertex per pixel on the picture side; the smooth side only has
  * vertices along its rim.
  */
-export function lithophaneMesh(p: LithophaneParams, source: Picture): Lithophane {
+export function lithophaneMesh(p: LithophaneParams, original: Picture): Lithophane {
+  const source = turned(original, p.rotate);
   const wrap = p.form === 'cylinder';
   // As many columns as the print can show, but never fewer than the picture has.
   const span = wrap ? Math.PI * p.diameter : p.width - 2 * p.border;

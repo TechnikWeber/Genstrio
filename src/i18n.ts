@@ -5,6 +5,11 @@ export type Lang = 'de' | 'en';
 type Dict = Record<string, string>;
 
 const de: Dict = {
+  'lithophane.p.rotate': 'Bild drehen',
+  'lithophane.o.rotate.0': 'Nicht gedreht',
+  'lithophane.o.rotate.90': '90° nach rechts',
+  'lithophane.o.rotate.180': 'Auf den Kopf (180°)',
+  'lithophane.o.rotate.270': '90° nach links',
   'lithophane.p.mirror': 'Spiegeln (für die Ansicht von der glatten Seite)',
   'lithophane.p.brightness': 'Helligkeit',
   'lithophane.p.contrast': 'Kontrast',
@@ -1158,6 +1163,11 @@ const de: Dict = {
 };
 
 const en: Dict = {
+  'lithophane.p.rotate': 'Rotate the picture',
+  'lithophane.o.rotate.0': 'Not rotated',
+  'lithophane.o.rotate.90': '90° to the right',
+  'lithophane.o.rotate.180': 'Upside down (180°)',
+  'lithophane.o.rotate.270': '90° to the left',
   'lithophane.p.mirror': 'Mirror (for viewing from the smooth side)',
   'lithophane.p.brightness': 'Brightness',
   'lithophane.p.contrast': 'Contrast',

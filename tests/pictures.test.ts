@@ -568,6 +568,35 @@ describe('lithophane', () => {
     }
   });
 
+  it('takes pictures upright or lying, and turns them', () => {
+    // 60 × 40 pixels: lying. Its left third is black.
+    const lying: Bitmap = { width: 60, height: 40, data: new Uint8Array(2400).map((_, i) => (i % 60 < 20 ? 0 : 255)) };
+    const build = (rotate: string) => lithophaneMesh(litho({ border: 0, width: 90, rotate }), lying);
+    const thickAt = (mesh: WeldedMesh, test: (x: number, z: number) => boolean) => {
+      let thick = 0;
+      for (let i = 0; i < mesh.vertices.length; i += 3) if (test(mesh.vertices[i], mesh.vertices[i + 2])) thick = Math.max(thick, -mesh.vertices[i + 1]);
+      return thick;
+    };
+    const plain = build('0');
+    expect(plain.height / plain.width).toBeCloseTo(40 / 60, 1);
+    expect(thickAt(plain.mesh, (x) => x < -35)).toBeCloseTo(3, 3);
+    expect(thickAt(plain.mesh, (x) => x > 0)).toBeCloseTo(0.6, 3);
+    // A quarter turn to the right stands it upright; what was left is now on top.
+    const right = build('90');
+    expect(right.height / right.width).toBeCloseTo(60 / 40, 1);
+    expect(openEdges(right.mesh)).toBe(0);
+    expect(thickAt(right.mesh, (_, z) => z > right.height * 0.8)).toBeCloseTo(3, 3);
+    expect(thickAt(right.mesh, (_, z) => z < right.height * 0.5)).toBeCloseTo(0.6, 3);
+    // To the left, it is at the bottom; upside down, on the right.
+    const left = build('270');
+    expect(thickAt(left.mesh, (_, z) => z < left.height * 0.2)).toBeCloseTo(3, 3);
+    expect(thickAt(left.mesh, (_, z) => z > left.height * 0.5)).toBeCloseTo(0.6, 3);
+    const over = build('180');
+    expect(over.height / over.width).toBeCloseTo(40 / 60, 1);
+    expect(thickAt(over.mesh, (x) => x > 35)).toBeCloseTo(3, 3);
+    expect(thickAt(over.mesh, (x) => x < 0)).toBeCloseTo(0.6, 3);
+  });
+
   it('adjusts the picture before it becomes thickness', () => {
     const volume = (overrides: Params) => {
       const { mesh, width, height } = lithophaneMesh(litho({ border: 0, width: 80, ...overrides }), grey(128));
