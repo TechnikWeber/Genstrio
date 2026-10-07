@@ -2,9 +2,9 @@
 import opencascade from 'replicad-opencascadejs';
 import wasmUrl from 'replicad-opencascadejs/wasm?url';
 import { exportSTEP, loadFont, makeCompound, setOC } from 'replicad';
-import { BUILDERS, loadedFonts, ParamError, type BuildResult, type Part } from '../generators/build';
+import { BUILDERS, loadedFonts, ParamError, type BuildResult, type MeshPart, type Part } from '../generators/build';
 import type { GeneratorId, Params } from '../generators/types';
-import { meshPart, write3mf } from './export';
+import { meshPart, vertexNormals, write3mf, writeStl } from './export';
 import type { ExportFormat, PartMesh, Request, Response } from './protocol';
 
 const send = (msg: Response, transfer: Transferable[] = []) => self.postMessage(msg, transfer);
@@ -18,7 +18,9 @@ const fontUrls = import.meta.glob<string>('../fonts/*.woff', { query: '?url', im
 
 /** Whatever sets text needs its font before it can build. */
 async function prepare(generator: GeneratorId, params: Params) {
-  const font = String(generator === 'text' ? params.font : generator === 'enclosure' && String(params.lidText).trim() ? params.lidTextFont : '');
+  let font = '';
+  if (generator === 'text' || (generator === 'qr' && String(params.label).trim())) font = String(params.font);
+  else if (generator === 'enclosure' && String(params.lidText).trim()) font = String(params.lidTextFont);
   const url = fontUrls[`../fonts/${font}.woff`];
   if (!url || loadedFonts.has(font)) return;
   await loadFont(new URL(url, import.meta.url).href, font);
@@ -31,7 +33,17 @@ let cache: { key: string; result: BuildResult } | null = null;
 const keyOf = (generator: GeneratorId, params: Params) => generator + JSON.stringify(params);
 const pause = () => new Promise((resolve) => setTimeout(resolve));
 
-function meshParts(parts: Part[]): { meshes: PartMesh[]; transfer: Transferable[] } {
+function meshParts(parts: Part[], ready: MeshPart[] = []): { meshes: PartMesh[]; transfer: Transferable[] } {
+  // Parts that are meshes already go out as copies: the originals stay for the export.
+  const copies = ready.map(({ name, mesh }): PartMesh => ({
+    name,
+    vertices: mesh.vertices.slice(),
+    normals: vertexNormals(mesh),
+    triangles: mesh.triangles.slice(),
+    edges: new Float32Array(0),
+    shade: mesh.shade?.slice(),
+    instances: [[0, 0, 0]],
+  }));
   const meshes = parts.map((part): PartMesh => {
     const mesh = part.shape.mesh({ tolerance: 0.1, angularTolerance: 0.3 });
     return {
@@ -44,7 +56,8 @@ function meshParts(parts: Part[]): { meshes: PartMesh[]; transfer: Transferable[
       assembled: part.assembled,
     };
   });
-  const transfer = meshes.flatMap((m) => [m.vertices.buffer, m.normals.buffer, m.triangles.buffer, m.edges.buffer]);
+  meshes.push(...copies);
+  const transfer = meshes.flatMap((m) => [m.vertices.buffer, m.normals.buffer, m.triangles.buffer, m.edges.buffer, ...(m.shade ? [m.shade.buffer] : [])]);
   return { meshes, transfer };
 }
 
@@ -56,7 +69,7 @@ async function build(id: number, generator: GeneratorId, params: Params) {
     const step = steps.next();
     if (step.done) {
       cache = { key: keyOf(generator, params), result: step.value };
-      const { meshes, transfer } = meshParts(step.value.parts);
+      const { meshes, transfer } = meshParts(step.value.parts, step.value.meshes);
       const { notes, frame } = step.value;
       send({ type: 'done', id, parts: meshes, notes, frame, ms: Math.round(performance.now() - started) }, transfer);
       return;
@@ -83,24 +96,29 @@ function finish(generator: GeneratorId, params: Params): BuildResult {
 }
 
 async function exportFile(id: number, generator: GeneratorId, params: Params, format: ExportFormat, only?: string) {
-  const all = finish(generator, params).parts;
-  const chosen = all.filter((part) => part.name === only);
-  const parts = chosen.length ? chosen : all;
+  const result = finish(generator, params);
+  const named = <T extends { name: string }>(all: T[]) => (all.some((part) => part.name === only) ? all.filter((part) => part.name === only) : all);
+  const parts = named(result.parts);
+  const ready = named(result.meshes ?? []);
+  const chosen = [...result.parts, ...(result.meshes ?? [])].some((part) => part.name === only);
   let data: ArrayBuffer;
   let mime: string;
   if (format === 'step') {
+    // Triangles are not CAD geometry.
+    if (!parts.length) throw new ParamError('err.noStep');
     data = await exportSTEP(parts.map((p) => ({ shape: p.shape, name: p.name }))).arrayBuffer();
     mime = 'model/step';
-  } else if (format === 'stl') {
+  } else if (format === 'stl' && !ready.length) {
     const solid = parts.length === 1 ? parts[0].shape : makeCompound(parts.map((p) => p.shape));
     data = await solid.blobSTL({ binary: true, tolerance: 0.02, angularTolerance: 0.2 }).arrayBuffer();
     mime = 'model/stl';
   } else {
-    const zip = write3mf(parts.map((p) => ({ name: p.name, mesh: meshPart(p.shape, 0.02) })));
-    data = zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength) as ArrayBuffer;
-    mime = 'model/3mf';
+    const meshes = [...parts.map((p) => ({ name: p.name, mesh: meshPart(p.shape, 0.02) })), ...ready];
+    const file = format === 'stl' ? writeStl(meshes.map((m) => m.mesh)) : write3mf(meshes);
+    data = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+    mime = format === 'stl' ? 'model/stl' : 'model/3mf';
   }
-  send({ type: 'file', id, name: `genstrio-${generator}${chosen.length ? `-${only}` : ''}.${format}`, mime, data }, [data]);
+  send({ type: 'file', id, name: `genstrio-${generator}${chosen ? `-${only}` : ''}.${format}`, mime, data }, [data]);
 }
 
 self.onmessage = async (event: MessageEvent<Request>) => {

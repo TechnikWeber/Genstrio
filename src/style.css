@@ -95,8 +95,8 @@ h1 {
 
 #tools {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
   padding: 0 16px;
 }
 
@@ -105,9 +105,12 @@ h1 {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 9px 4px 7px;
-  font-size: 0.78rem;
-  line-height: 1.2;
+  padding: 8px 2px 6px;
+  min-width: 0;
+  font-size: 0.7rem;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+  hyphens: manual;
   color: var(--muted);
   background: var(--raised);
   border: 1px solid var(--line);
@@ -289,8 +292,30 @@ input.invalid {
   accent-color: var(--accent);
 }
 
-.field.select {
+.field.select,
+.field.image {
   grid-template-columns: 1fr;
+}
+
+.picture {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.picture small {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.thumb {
+  max-width: 72px;
+  max-height: 72px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
 .list {

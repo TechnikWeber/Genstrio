@@ -8,6 +8,8 @@ export interface PartMesh {
   normals: Float32Array;
   triangles: Uint32Array;
   edges: Float32Array;
+  /** Brightness (0–1) per vertex, for a part that carries a picture. */
+  shade?: Float32Array;
   /** x, y, z and optionally a turn about Z in degrees. */
   instances: ([number, number, number] | [number, number, number, number])[];
   assembled?: { flip: boolean; offset: [number, number, number] };

@@ -1,5 +1,6 @@
-import { draw, drawCircle, drawPolysides, drawRoundedRectangle, makeCompound, type Drawing, type Shape3D, type Sketch } from 'replicad';
+import { assembleWire, basicFaceExtrusion, draw, drawCircle, drawPolysides, drawRoundedRectangle, makeCompound, makeFace, makeLine, Vector, type Drawing, type Shape3D, type Sketch } from 'replicad';
 import type { Note } from '../types';
+import type { Pt, Region } from './trace';
 
 export type Vec3 = [number, number, number];
 export type Placement = Vec3 | [number, number, number, number];
@@ -13,6 +14,20 @@ export interface Part {
   assembled?: { flip: boolean; offset: Vec3 };
 }
 
+/** Triangles with shared corners, for what a CAD solid would be too heavy for. */
+export interface TriMesh {
+  vertices: Float32Array;
+  triangles: Uint32Array;
+  /** Brightness (0–1) per vertex, shown in the preview. */
+  shade?: Float32Array;
+}
+
+/** A part made of triangles instead of CAD geometry, such as a lithophane. */
+export interface MeshPart {
+  name: string;
+  mesh: TriMesh;
+}
+
 export interface Stage {
   label: string;
   parts: Part[];
@@ -20,6 +35,8 @@ export interface Stage {
 
 export interface BuildResult {
   parts: Part[];
+  /** Parts that exist only as a mesh; a model with any cannot be exported as STEP. */
+  meshes?: MeshPart[];
   notes: Note[];
   /** Outline (width, depth) drawn on the bed, e.g. the drawer of an organizer. */
   frame?: [number, number];
@@ -48,6 +65,13 @@ export function prism(drawing: Drawing, h: number, z = 0): Shape3D {
 /** Rounded box centred on the Z axis, standing on z. */
 export function roundedBox(l: number, w: number, r: number, h: number, z = 0): Shape3D {
   return prism(roundedRect(l, w, r), h, z);
+}
+
+/** Regions (outlines in mm with their holes) as one solid, h high from z. */
+export function regionsSolid(regions: Region[], h: number, z = 0): Shape3D {
+  const wire = (loop: Pt[]) => assembleWire(loop.map(([x, y], i) => makeLine([x, y, z], [...loop[(i + 1) % loop.length], z])));
+  const solids = regions.map(({ outer, holes }) => basicFaceExtrusion(makeFace(wire(outer), holes.map(wire)), new Vector([0, 0, h])) as Shape3D);
+  return solids.length === 1 ? solids[0] : (makeCompound(solids) as Shape3D);
 }
 
 export type RZ = [number, number];

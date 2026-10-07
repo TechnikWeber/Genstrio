@@ -13,6 +13,8 @@ export class Viewer {
   private model = new THREE.Group();
   private bed = new THREE.Group();
   private material = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide });
+  // For parts that carry a picture: each vertex has its own brightness.
+  private pictureMaterial = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0, side: THREE.DoubleSide, vertexColors: true });
   private edgeMaterial = new THREE.LineBasicMaterial();
   private frameMaterial = new THREE.LineBasicMaterial();
   private bounds = new THREE.Box3();
@@ -108,11 +110,21 @@ export class Viewer {
       geometry.setAttribute('position', new THREE.BufferAttribute(part.vertices, 3));
       geometry.setAttribute('normal', new THREE.BufferAttribute(part.normals, 3));
       geometry.setIndex(new THREE.BufferAttribute(part.triangles, 1));
+      if (part.shade) {
+        // The warm white of a lit lithophane
+        const colours = new Float32Array(3 * part.shade.length);
+        for (let i = 0; i < part.shade.length; i++) {
+          // Display brightness to the linear light the renderer works in, dimmed to leave room for the lamps.
+          const v = 0.62 * part.shade[i] ** 2.2;
+          colours.set([v, v * 0.94, v * 0.82], 3 * i);
+        }
+        geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+      }
       const edges = new THREE.BufferGeometry();
       edges.setAttribute('position', new THREE.BufferAttribute(part.edges, 3));
       const fitted = this.assembled ? part.assembled : undefined;
       for (const [x, y, z, turn = 0] of fitted ? [fitted.offset] : part.instances) {
-        const mesh = new THREE.Mesh(geometry, this.material);
+        const mesh = new THREE.Mesh(geometry, part.shade ? this.pictureMaterial : this.material);
         const lines = new THREE.LineSegments(edges, this.edgeMaterial);
         for (const object of [mesh, lines]) {
           object.position.set(x, y, z);

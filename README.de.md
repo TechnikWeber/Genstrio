@@ -6,7 +6,7 @@
 
 Parametrische Generatoren für den 3D-Druck. Ein paar Maße eingeben, dem Modell beim Entstehen in 3D zusehen und es als **STL**, **3MF** oder **STEP** herunterladen.
 
-Genstrio läuft vollständig im Browser: Die Geometrie berechnet ein echter CAD-Kern (OpenCascade, nach WebAssembly kompiliert) lokal auf deinem Rechner. Kein Konto, kein Upload, keine Verarbeitung auf einem Server.
+Genstrio läuft vollständig im Browser: Die Geometrie berechnet ein echter CAD-Kern (OpenCascade, nach WebAssembly kompiliert) lokal auf deinem Rechner. Kein Konto, kein Upload, keine Verarbeitung auf einem Server – auch Bilder, die du für ein Relief, einen Ausstecher oder eine Lithophanie lädst, verlassen deinen Rechner nicht.
 
 Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch um.
 
@@ -22,6 +22,11 @@ Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch
 | **Gridfinity** | Behälter und Grundplatten im 42-mm-Raster von [Gridfinity](https://gridfinity.xyz). Behälter von 1 × 1 bis 10 × 10 Einheiten mit oder ohne Stapelrand, beliebig viele Fächer, abgesenkte Trennwände, Griffschräge vorne, Beschriftungsleisten (ganze Breite, links, mittig oder rechts), einstellbare Wand- und Bodenstärke sowie Löcher für Magnete und/oder M3-Schrauben in den Ecken oder in jedem Fuß. Statt eines offenen Behälters gibt es auch einen **Halter** mit einem Feld von Aufnahmen – für Sechskant-Bits, AAA-/AA-/18650-Zellen, Stifte oder jedes runde, sechseckige oder quadratische Maß – oder einen massiven Block. Grundplatten als offener Rahmen oder mit Boden, Magnetlöchern und Senklöchern zum Festschrauben. Gibst du das **Innenmaß einer Schublade** ein, füllt die Platte sie vollständig: Das Raster liegt mittig oder an einer Seite, der Rest wird ein massiver Rand, und Platten, die größer sind als dein Druckbett, werden in passende Stücke geteilt; Stücke, die nach einer halben Drehung gleich sind, werden nur einmal gebaut und exportiert. |
 | **Haken & Halter** | Wandhaken (Ausladung, Spitze, Steigung und Biegeradius einstellbar), Halter passend zum Durchmesser eines Stiels oder Rohrs, Regalwinkel mit Stützrippe und Löchern für das Brett sowie Leisten mit bis zu zehn Haken. Befestigt mit Schrauben (angesenkt oder nicht), Klebeband, über eine Tür beliebiger Stärke gehängt oder in eine Lochwand eingehängt. Einzelne Haken liegen druckfertig auf der Seite, damit die Schichten entlang des Arms laufen. |
 | **Text & Schilder** | Schilder, Etiketten, Schlüsselanhänger, Stempel, Schablonen und freistehende Schriftzüge aus einer oder mehreren Textzeilen, in neun Schriften. Text erhaben auf einer Platte, vertieft, durchbrochen oder als Buchstaben allein mit verbindendem Steg. Rechteckige, pillenförmige oder elliptische Platte mit erhabenem Rahmen, Löchern für Schlüsselring oder Schrauben, gespiegeltem Text für Stempel und dem Text als eigenem Teil für den Druck in einer zweiten Farbe. |
+| **Zahnräder** | Evolventen-Zahnräder nach Modul, Zähnezahl und Eingriffswinkel (14,5°, 20°, 25°): gerade, schräg oder pfeilverzahnt. Auf Wunsch gleich mit passendem Gegenrad; die App nennt Achsabstand und Übersetzung, und **Zusammengebaut** zeigt die Räder im Eingriff. Bohrung rund, mit Abflachung für D-Wellen, als Sechs- oder Vierkant, dazu eine Nabe und einstellbares Flankenspiel. Außerdem Zahnstangen mit derselben Teilung. |
+| **QR-Code** | QR-Codes für Links, WLAN-Zugang oder beliebigen Text, erhaben oder vertieft auf einer Platte, auf Wunsch als eigenes Teil für eine zweite Farbe. Fehlerkorrektur L bis H, einstellbare Ruhezone, Loch für den Schlüsselring und eine Textzeile unter dem Code in jeder Schrift des Text-Generators. Die App nennt die Modulgröße und warnt, wenn sie für die Düse zu fein wird. |
+| **Logo-Relief** | Ein Logo oder eine Zeichnung als **SVG, PNG oder JPG** laden (oder eine mitgelieferte Form nehmen) und als Relief, Gravur, Schablone oder freie Form drucken. Die Platte ist rechteckig, elliptisch oder folgt dem Umriss des Motivs wie der Rand eines Aufklebers, mit Öse für den Schlüsselring. Schwelle, Glättung und „Hell und Dunkel tauschen“ bestimmen, was als Form zählt; Motiv gespiegelt für Stempel und als eigenes Teil für eine zweite Farbe. |
+| **Ausstechform** | Ausstecher für Plätzchen, Fondant oder Ton nach dem Umriss eines Bildes oder einer mitgelieferten Form (Herz, Stern, Blume, Mond, Kreis). Wand mit überall gleicher Stärke, schmale Schneide oben, Griffrand unten; der Umriss lässt sich weiten oder verengen. Liegt druckfertig auf dem Griffrand. |
+| **Lithophanie** | Ein Foto als Relief, das erst im Gegenlicht zum Bild wird: als flache Tafel, gebogen (steht von selbst) oder als Zylinder für einen Lampenschirm. Dünnste und dickste Stelle, Rahmen und Negativ sind einstellbar; die Vorschau zeigt das Bild so, wie es durchleuchtet wirkt. Export als STL oder 3MF. |
 
 ### Bildschirmfotos
 
@@ -33,8 +38,14 @@ Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch
 | Gridfinity-Behälter mit Fächern, Griffschräge und Beschriftungsleisten | Gridfinity-Grundplatten, die eine Schublade füllen, geteilt fürs Druckbett |
 | [![Haken & Halter: eine Schlüsselleiste](docs/images/hook.png)](docs/images/hook.png) | [![Text & Schilder: Türschild mit Rahmen und Schraublöchern](docs/images/text.png)](docs/images/text.png) |
 | Haken & Halter: eine Schlüsselleiste | Text & Schilder: Türschild mit Rahmen und Schraublöchern |
+| [![Zahnräder: pfeilverzahntes Paar im Eingriff](docs/images/gear.png)](docs/images/gear.png) | [![QR-Code mit Beschriftung](docs/images/qr.png)](docs/images/qr.png) |
+| Zahnräder: pfeilverzahntes Paar im Eingriff | QR-Code mit Beschriftung |
+| [![Logo-Relief aus einer SVG-Datei](docs/images/relief.png)](docs/images/relief.png) | [![Ausstechform nach dem Umriss eines Herzens](docs/images/cutter.png)](docs/images/cutter.png) |
+| Logo-Relief aus einer SVG-Datei | Ausstechform: Herz |
+| [![Lithophanie: gebogene Tafel](docs/images/lithophane.png)](docs/images/lithophane.png) | |
+| Lithophanie: gebogene Tafel, so wie sie im Gegenlicht wirkt | |
 
-Weitere Generatoren sind geplant, siehe [Roadmap](#roadmap).
+Was noch geplant ist, steht in der [Roadmap](#roadmap).
 
 ## Lokal starten
 
@@ -76,7 +87,7 @@ Mit `GENSTRIO_PORT` wählst du einen anderen Port als 4173.
 
 - **STL** enthält alle Teile in einem Netz, druckfertig angeordnet.
 - **3MF** enthält jedes Teil als eigenes Objekt.
-- **STEP** enthält die exakte CAD-Geometrie zum Weiterbearbeiten in FreeCAD, Fusion und Ähnlichem.
+- **STEP** enthält die exakte CAD-Geometrie zum Weiterbearbeiten in FreeCAD, Fusion und Ähnlichem. Eine Lithophanie ist ein Dreiecksnetz und lässt sich deshalb nur als STL oder 3MF speichern.
 
 Maße lassen sich in Millimetern, Zentimetern oder Zoll anzeigen und eingeben (Auswahl oben im Panel; Zoll auch als Bruch wie `3 1/2`); exportierte Dateien sind immer in Millimetern. Besteht ein Modell aus mehreren Teilen, lässt sich über die Auswahl unter den Export-Knöpfen auch nur eines herunterladen, etwa nur der Deckel. Der Schubladen-Organizer exportiert jede Boxgröße einmal; die App nennt dir die Stückzahl.
 
@@ -103,6 +114,8 @@ So ist der Code aufgebaut:
 
 Lochbilder der Boards stehen in `src/generators/boards.ts`, Vorlagen in `src/generators/templates.ts`.
 
+Bilder werden im Browser zu einem kleinen Graustufenbild verkleinert (`src/picture.ts`, `src/generators/image.ts`) und wie jeder andere Wert gespeichert. `src/generators/build/trace.ts` macht daraus ein Distanzfeld und zeichnet dessen Höhenlinien nach: Die Linie bei 0 ist der Umriss, jede andere derselbe Umriss, gleichmäßig geweitet oder verengt – so bekommt ein Ausstecher seine Wand.
+
 Für einen neuen Generator: Parameter in `meta.ts` deklarieren, eine Build-Funktion schreiben, sie in `build/index.ts` eintragen und die Texte in `i18n.ts` ergänzen.
 
 ## Roadmap
@@ -110,12 +123,14 @@ Für einen neuen Generator: Parameter in `meta.ts` deklarieren, eine Build-Funkt
 - Weitere Board-Vorlagen, auch mit den Anschlussausschnitten von BeagleBone und anderen Einplatinencomputern
 - Scharniere und Verschlüsse, die fertig montiert aus dem Drucker kommen
 - Weitere Fittings: Rohrhalter, T-Stücke, Schlauchkupplungen
-- Weitere Generatoren: Zahnräder, QR-Codes in 3D, Logo-Reliefs, Ausstechformen
+- Zahnräder: Hohlräder und Planetengetriebe, Kegelräder
+- Ausstechformen mit Prägestempel für die Linien im Inneren
+- Reliefs mit weichem Höhenverlauf aus Graustufenbildern
 
 ## Lizenz
 
 [AGPL-3.0-or-later](LICENSE). Die erzeugten Modelle gehören dir, ohne Einschränkung.
 
-Genstrio baut auf [replicad](https://github.com/sgenoud/replicad) (MIT), [OpenCascade](https://dev.opencascade.org) (LGPL-2.1), [three.js](https://threejs.org) (MIT) und [fflate](https://github.com/101arrowz/fflate) (MIT) auf.
+Genstrio baut auf [replicad](https://github.com/sgenoud/replicad) (MIT), [OpenCascade](https://dev.opencascade.org) (LGPL-2.1), [three.js](https://threejs.org) (MIT), [fflate](https://github.com/101arrowz/fflate) (MIT) und [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT) auf. „QR Code“ ist eine eingetragene Marke von DENSO WAVE.
 
 Die Schriften des Text-Generators – Inter, Fredoka, Oswald, Bebas Neue, Zilla Slab, Playfair Display, JetBrains Mono, Pacifico und Allerta Stencil – stehen unter der [SIL Open Font License 1.1](https://openfontlicense.org), die die freie, auch kommerzielle Nutzung in allem erlaubt, was du damit herstellst. Die Schriftdateien und ihre Lizenztexte liegen in [`src/fonts`](src/fonts).

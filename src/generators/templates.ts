@@ -176,3 +176,53 @@ export const TEXT_TEMPLATES: Record<string, Params> = {
   letters: { text: 'Home', font: 'pacifico', size: 30, style: 'letters', textHeight: 5, bar: false },
   label: { text: 'M3 × 10\nM3 × 16', font: 'jetbrains-mono', size: 6, style: 'engraved', textHeight: 0.6, plateThickness: 1.6, padding: 3, cornerRadius: 1.5 },
 };
+
+export const GEAR_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  // Two gears that mesh; the notes give the distance between their axles
+  pair: { teeth: 16, teeth2: 32 },
+  helical: { teeth: 24, teeth2: 24, helix: 20, thickness: 10 },
+  // Double helical: runs quietly and cannot slide sideways
+  herringbone: { teeth: 18, teeth2: 36, helix: 25, herringbone: true, thickness: 12 },
+  // For a 5 mm motor shaft with a flat
+  pinion: { module: 1, teeth: 14, thickness: 8, bore: 'd', boreDiameter: 5.1, boreFlat: 0.5, hubHeight: 6, hubDiameter: 10 },
+  rack: { kind: 'rack', rackTeeth: 16, thickness: 8 },
+};
+
+export const QR_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  // Guests scan it to join the network; replace name and password
+  wifi: { text: 'WIFI:T:WPA;S:MyNetwork;P:MyPassword;;', label: 'WiFi', size: 50, labelSize: 7 },
+  keychain: { text: 'https://example.com', ecc: 'L', size: 28, quiet: 2, hole: 'top', holeDiameter: 4, cornerRadius: 4 },
+  twoColour: { separate: true, relief: 0.6 },
+  engraved: { style: 'engraved', relief: 0.8, plateThickness: 2.4 },
+  doorSign: { text: 'https://example.com/menu', label: 'Menu', size: 60, labelSize: 9, font: 'fredoka', cornerRadius: 6, plateThickness: 2.4 },
+};
+
+export const RELIEF_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  // The plate follows the outline, with a lug for the key ring
+  keychain: { shape: 'heart', size: 32, plateShape: 'contour', padding: 2.5, hole: 'top', plateThickness: 2, relief: 1 },
+  twoColour: { shape: 'flower', size: 50, plateShape: 'ellipse', separate: true, relief: 0.8 },
+  stencil: { shape: 'star', size: 80, style: 'cutout', plateThickness: 1.2, padding: 10 },
+  ornament: { shape: 'moon', size: 70, style: 'shape', relief: 3 },
+  stamp: { shape: 'star', size: 30, mirror: true, relief: 2, plateThickness: 4, padding: 2, plateShape: 'ellipse' },
+};
+
+export const CUTTER_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  star: { shape: 'star', size: 75 },
+  flower: { shape: 'flower', size: 65 },
+  moon: { shape: 'moon', size: 70 },
+  round: { shape: 'circle', size: 60 },
+  // Small and low, for fondant or clay
+  mini: { shape: 'heart', size: 30, height: 10, wall: 0.9, flangeWidth: 3 },
+};
+
+export const LITHOPHANE_TEMPLATES: Record<string, Params> = {
+  demo: {},
+  curved: { form: 'arc', width: 120, angle: 120 },
+  // A shade around a small lamp or an LED tea light
+  lamp: { form: 'cylinder', diameter: 70, border: 3 },
+  frame: { width: 150, border: 5, maxThickness: 3.2 },
+};

@@ -7,7 +7,11 @@ import { BUILDERS, loadedFonts, ParamError, type BuildResult, type Stage } from 
 import { FONTS } from '../src/generators/fonts';
 import { GENERATORS } from '../src/generators/meta';
 import { defaults, fromTemplate, newItem, sanitize, type GeneratorId, type ListParam, type Params } from '../src/generators/types';
-import { meshPart, write3mf } from '../src/engine/export';
+import { lithophaneMesh, type LithophaneParams } from '../src/generators/build/lithophane';
+import { qrMatrix } from '../src/generators/build/qr';
+import { areaOf, covers, distanceField, frameOf, gridRegions, sampleMask, traceBand, traceRegions } from '../src/generators/build/trace';
+import { decodeImage, encodeImage, fromRgba, type Bitmap } from '../src/generators/image';
+import { meshPart, vertexNormals, write3mf, writeStl, type WeldedMesh } from '../src/engine/export';
 import { formatLength, parseLength, setUnit } from '../src/units';
 
 beforeAll(async () => {
@@ -796,7 +800,495 @@ describe('text', () => {
   });
 });
 
+describe('gear', () => {
+  const spurVolume = () => measureVolume(run('gear').result.parts[0].shape);
+
+  it('builds an involute gear on its pitch circle', () => {
+    const { result } = run('gear');
+    const [gear] = result.parts;
+    const [w, d, h] = size(gear.shape);
+    // Module 1.5 × 20 teeth: pitch Ø 30, tips one module further out
+    expect(w).toBeCloseTo(33, 1);
+    expect(d).toBeGreaterThan(32.5);
+    expect(h).toBeCloseTo(8, 3);
+    expect(gear.shape.solids.length).toBe(1);
+    const vol = measureVolume(gear.shape);
+    const bore = Math.PI * 2.5 ** 2 * 8;
+    expect(vol).toBeGreaterThan(Math.PI * 13.125 ** 2 * 8 - bore);
+    expect(vol).toBeLessThan(Math.PI * 16.5 ** 2 * 8 - bore);
+    expect(result.notes.find((n) => n.key === 'note.gearSize')?.vars).toMatchObject({ d: 30, o: 33 });
+  });
+
+  it('makes a second gear that meshes with the first', () => {
+    const { result } = run('gear', { teeth: 16, teeth2: 32, bore: 'none' });
+    const [first, second] = result.parts;
+    expect(result.notes.find((n) => n.key === 'note.gearPair')?.vars).toMatchObject({ a: 36, i: 2 });
+    // Laid out apart for printing …
+    expect(measureVolume(first.shape.clone().intersect(second.shape.clone()))).toBeLessThan(0.01);
+    // … and free of each other at the centre distance: teeth sit in gaps.
+    const [dx] = second.assembled!.offset;
+    const meshed = second.shape.clone().translate([dx, 0, 0]) as Shape3D;
+    expect(meshed.boundingBox.center[0]).toBeCloseTo(36, 1);
+    expect(measureVolume(first.shape.clone().intersect(meshed))).toBeLessThan(0.5);
+    // Turned by half a tooth they would collide.
+    const clash = meshed.clone().rotate(180 / 32, [36, 0, 0], [0, 0, 1]) as Shape3D;
+    expect(measureVolume(first.shape.clone().intersect(clash))).toBeGreaterThan(20);
+  });
+
+  it('twists the teeth into a helix or a herringbone without changing their volume', () => {
+    const straight = spurVolume();
+    const helical = run('gear', { helix: 20 }).result.parts[0].shape;
+    expect(measureVolume(helical)).toBeGreaterThan(straight * 0.985);
+    expect(measureVolume(helical)).toBeLessThan(straight * 1.015);
+    const herringbone = run('gear', { helix: 25, herringbone: true }).result.parts[0].shape;
+    expect(herringbone.solids.length).toBe(1);
+    expect(measureVolume(herringbone)).toBeGreaterThan(straight * 0.97);
+    expect(measureVolume(herringbone)).toBeLessThan(straight * 1.03);
+  });
+
+  it('cuts the bore and adds a hub', () => {
+    const solid = measureVolume(run('gear', { bore: 'none' }).result.parts[0].shape);
+    const round = measureVolume(run('gear', { bore: 'round', boreDiameter: 6 }).result.parts[0].shape);
+    const flat = measureVolume(run('gear', { bore: 'd', boreDiameter: 6, boreFlat: 1 }).result.parts[0].shape);
+    const hex = measureVolume(run('gear', { bore: 'hex', boreDiameter: 6 }).result.parts[0].shape);
+    expect(solid - round).toBeCloseTo(Math.PI * 9 * 8, 0);
+    expect(flat).toBeGreaterThan(round + 5);
+    expect(solid - hex).toBeCloseTo((Math.sqrt(3) / 2) * 36 * 8, 0);
+    const hub = run('gear', { hubHeight: 6, hubDiameter: 14 }).result.parts[0].shape;
+    expect(size(hub)[2]).toBeCloseTo(14, 2);
+    expect(hub.solids.length).toBe(1);
+    expect(() => run('gear', { boreDiameter: 40 })).toThrow(ParamError);
+  });
+
+  it('builds a rack with the same pitch', () => {
+    const { result } = run('gear', { kind: 'rack', rackTeeth: 10, module: 2, rackHeight: 5, thickness: 6 });
+    const [l, h, t] = size(result.parts[0].shape);
+    expect(l).toBeCloseTo(10 * Math.PI * 2, 2);
+    expect(h).toBeCloseTo(5 + 2.25 * 2, 2);
+    expect(t).toBeCloseTo(6, 3);
+  });
+
+  it('builds every gear template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.gear.templates!)) {
+      const { result } = run('gear', fromTemplate(GENERATORS.gear, name));
+      expect(warnings(result), name).toEqual([]);
+      for (const part of result.parts) expect(part.shape.solids.length, name).toBe(1);
+    }
+  });
+});
+
+describe('tracing', () => {
+  it('finds the outline of a shape and grows it by any distance', () => {
+    const field = distanceField(sampleMask('circle'), { pad: 40 });
+    const frame = frameOf(field, 50)!;
+    expect(frame.width).toBeCloseTo(50, 1);
+    expect(frame.height).toBeCloseTo(50, 1);
+    const circle = traceRegions(field, frame);
+    expect(circle).toHaveLength(1);
+    expect(circle[0].holes).toHaveLength(0);
+    expect(areaOf(circle) / (Math.PI * 25 ** 2)).toBeCloseTo(1, 2);
+    expect(areaOf(traceRegions(field, frame, 3)) / (Math.PI * 28 ** 2)).toBeCloseTo(1, 2);
+    expect(areaOf(traceRegions(field, frame, -5)) / (Math.PI * 20 ** 2)).toBeCloseTo(1, 2);
+    // A wall of constant width around it
+    const wall = traceBand(field, frame, 0, 2);
+    expect(wall).toHaveLength(1);
+    expect(wall[0].holes).toHaveLength(1);
+    expect(areaOf(wall) / (Math.PI * (27 ** 2 - 25 ** 2))).toBeCloseTo(1, 1);
+    expect(covers(wall, [26, 0])).toBe(true);
+    expect(covers(wall, [0, 0])).toBe(false);
+  });
+
+  it('keeps holes, or closes them for an outline only', () => {
+    const moon = sampleMask('circle');
+    // Punch a hole into the disc
+    const ring: Bitmap = { ...moon, data: moon.data.map((v, i) => (Math.hypot((i % moon.width) - 100, Math.floor(i / moon.width) - 100) < 40 ? 0 : v)) };
+    const open = distanceField(ring);
+    expect(traceRegions(open, frameOf(open, 50)!)[0].holes).toHaveLength(1);
+    const closed = distanceField(ring, { fillHoles: true });
+    expect(traceRegions(closed, frameOf(closed, 50)!)[0].holes).toHaveLength(0);
+    expect(frameOf(distanceField({ width: 20, height: 20, data: new Uint8Array(400) }), 50)).toBeNull();
+  });
+
+  it('mirrors on request and reads light on dark when inverted', () => {
+    const half: Bitmap = { width: 40, height: 20, data: new Uint8Array(800).map((_, i) => (i % 40 < 10 ? 255 : 0)) };
+    const field = distanceField(half, { pad: 6 });
+    // Ten pixels wide, twenty high: its middle lies between pixel centres.
+    const [px, py] = [6 + 4.5, 6 + 9.5];
+    expect(frameOf(field, 30)!.toMm([px, py])[0]).toBeCloseTo(0, 6);
+    expect(frameOf(field, 30)!.toMm([px, py])[1]).toBeCloseTo(0, 6);
+    expect(frameOf(field, 30)!.width).toBeCloseTo(15, 6);
+    const wide = distanceField(half, { pad: 6, invert: true });
+    expect(frameOf(wide, 30)!.width).toBeCloseTo(30, 0);
+    expect(frameOf(wide, 30, true)!.toMm([0, 0])[0]).toBeCloseTo(-frameOf(wide, 30)!.toMm([0, 0])[0], 6);
+  });
+
+  it('packs a picture into text and back', () => {
+    const bitmap = sampleMask('star', 64);
+    const text = encodeImage(bitmap);
+    expect(text.startsWith('64x64:')).toBe(true);
+    expect(decodeImage(text)).toEqual(bitmap);
+    expect(decodeImage('64x64:AAAA')).toBeNull();
+    expect(decodeImage('nonsense')).toBeNull();
+  });
+
+  it('reads a shape from a picture by transparency or by darkness, cropped to it', () => {
+    const rgba = (alpha: boolean) => {
+      const data = new Uint8Array(4 * 100 * 80).fill(255);
+      for (let y = 0; y < 80; y++) {
+        for (let x = 0; x < 100; x++) {
+          const inside = x >= 20 && x < 60 && y >= 10 && y < 30;
+          // Either black on white, or a white shape on nothing
+          if (alpha) data[4 * (y * 100 + x) + 3] = inside ? 255 : 0;
+          else if (inside) data.fill(0, 4 * (y * 100 + x), 4 * (y * 100 + x) + 3);
+        }
+      }
+      return data;
+    };
+    for (const alpha of [false, true]) {
+      const mask = fromRgba(rgba(alpha), 100, 80, 'mask', 200);
+      expect([mask.width, mask.height], String(alpha)).toEqual([40, 20]);
+      expect(mask.data.every((v) => v === 255)).toBe(true);
+    }
+    const small = fromRgba(rgba(false), 100, 80, 'mask', 10);
+    expect([small.width, small.height]).toEqual([10, 5]);
+    const photo = fromRgba(rgba(true), 100, 80, 'photo', 50);
+    expect([photo.width, photo.height]).toEqual([50, 40]);
+    // Transparent counts as white paper
+    expect(photo.data[0]).toBe(255);
+  });
+});
+
+describe('qr', () => {
+  it('encodes text into a code with its three finder patterns', () => {
+    const small = qrMatrix('HI', 'L');
+    expect(small.count).toBe(21);
+    expect(small.version).toBe(1);
+    for (const [r, c] of [[0, 0], [0, 20], [20, 0]]) {
+      // A 7 × 7 frame around a 3 × 3 block, in three corners
+      const dr = r === 0 ? 1 : -1;
+      const dc = c === 0 ? 1 : -1;
+      expect(small.dark(r, c)).toBe(true);
+      expect(small.dark(r + dr, c + dc)).toBe(false);
+      expect(small.dark(r + 3 * dr, c + 3 * dc)).toBe(true);
+    }
+    expect(qrMatrix('x'.repeat(200), 'H').count).toBeGreaterThan(small.count);
+    expect(() => qrMatrix('x'.repeat(3000), 'H')).toThrow(ParamError);
+    // Umlauts take two bytes each in UTF-8, so they need the larger code.
+    expect(qrMatrix('ä'.repeat(15), 'L').count).toBeGreaterThan(qrMatrix('a'.repeat(15), 'L').count);
+  });
+
+  it('traces the dark modules exactly, the right way round', () => {
+    const matrix = qrMatrix('https://example.com', 'M');
+    const n = matrix.count;
+    const regions = gridRegions(matrix.dark, n, 2, 0.01);
+    let dark = 0;
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (matrix.dark(r, c)) dark++;
+        // Row 0 is at the top, column 0 at the left.
+        expect(covers(regions, [(c + 0.5 - n / 2) * 2, (n / 2 - r - 0.5) * 2]), `${r}/${c}`).toBe(matrix.dark(r, c));
+      }
+    }
+    expect(areaOf(gridRegions(matrix.dark, n, 2))).toBeCloseTo(dark * 4, 6);
+    // Modules that touch only at a corner are parted, so no outline touches another.
+    const corners = regions.flatMap((region) => [region.outer, ...region.holes]).flat().map(([x, y]) => `${x.toFixed(4)}/${y.toFixed(4)}`);
+    expect(new Set(corners).size).toBe(corners.length);
+  });
+
+  it('raises the code on a plate with a quiet zone', () => {
+    const { result } = run('qr', { text: 'https://example.com', size: 50, quiet: 4, separate: true });
+    const [plate, code] = result.parts;
+    const matrix = qrMatrix('https://example.com', 'M');
+    const cell = 50 / matrix.count;
+    const [w, h, t] = size(plate.shape);
+    expect(w).toBeCloseTo(50 + 8 * cell, 2);
+    expect(h).toBeCloseTo(50 + 8 * cell, 2);
+    expect(t).toBeCloseTo(1.6, 3);
+    expect(size(code.shape)[0]).toBeCloseTo(50, 1);
+    expect(code.shape.boundingBox.bounds[0][2]).toBeCloseTo(1.6, 3);
+    let dark = 0;
+    for (let r = 0; r < matrix.count; r++) for (let c = 0; c < matrix.count; c++) if (matrix.dark(r, c)) dark++;
+    expect(measureVolume(code.shape) / (dark * cell * cell * 0.6)).toBeCloseTo(1, 1);
+    // In one piece, the plate carries the same code.
+    const joined = run('qr', { text: 'https://example.com', size: 50 }).result.parts;
+    expect(joined).toHaveLength(1);
+    expect(joined[0].shape.solids.length).toBe(1);
+    expect(measureVolume(joined[0].shape)).toBeCloseTo(measureVolume(plate.shape) + measureVolume(code.shape), -1);
+  });
+
+  it('engraves, labels and adds a hole', () => {
+    const flat = measureVolume(run('qr', { style: 'engraved', relief: 0.01 }).result.parts[0].shape);
+    const { result } = run('qr', { style: 'engraved', relief: 0.8 });
+    expect(measureVolume(result.parts[0].shape)).toBeLessThan(flat - 100);
+    expect(size(result.parts[0].shape)[2]).toBeCloseTo(1.6, 3);
+    const plain = size(run('qr').result.parts[0].shape);
+    const labelled = size(run('qr', { label: 'WiFi', labelSize: 6 }).result.parts[0].shape);
+    expect(labelled[1]).toBeGreaterThan(plain[1] + 6);
+    expect(labelled[0]).toBeCloseTo(plain[0], 2);
+    expect(size(run('qr', { hole: 'top', holeDiameter: 4 }).result.parts[0].shape)[1]).toBeCloseTo(plain[1] + 8, 2);
+    expect(warnings(run('qr', { size: 12 }).result)).toEqual(['note.qrFine']);
+    expect(() => run('qr', { text: '   ' })).toThrow(ParamError);
+  });
+
+  it('builds every QR template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.qr.templates!)) {
+      const { result } = run('qr', fromTemplate(GENERATORS.qr, name));
+      expect(warnings(result), name).toEqual([]);
+      expect(result.parts[0].shape.solids.length, name).toBe(1);
+    }
+  });
+});
+
+// A dark square with a square hole, off-centre on white: 60 × 60 px in a 100 × 80 picture
+const framePicture = (): string => {
+  const data = new Uint8Array(100 * 80);
+  for (let y = 10; y < 70; y++) for (let x = 20; x < 80; x++) if (x < 35 || x >= 65 || y < 25 || y >= 55) data[y * 100 + x] = 255;
+  return encodeImage({ width: 100, height: 80, data });
+};
+
+describe('relief', () => {
+  it('raises a shape on a plate sized to fit it', () => {
+    const { result } = run('relief');
+    expect(warnings(result)).toEqual([]);
+    const [w, h, t] = size(result.parts[0].shape);
+    const motif = result.notes.find((n) => n.key === 'note.motifSize')!.vars!;
+    expect(motif.w).toBeCloseTo(60, 0);
+    expect(w).toBeCloseTo(60 + 10, 0);
+    expect(h).toBeCloseTo((motif.h as number) + 10, 0);
+    expect(t).toBeCloseTo(2.4 + 1.2, 2);
+    expect(result.parts[0].shape.solids.length).toBe(1);
+  });
+
+  it('traces a picture, holes included', () => {
+    const { result } = run('relief', { shape: 'image', image: framePicture(), size: 60, smooth: 0, style: 'shape', relief: 2 });
+    const [w, h, t] = size(result.parts[0].shape);
+    expect(w).toBeCloseTo(60, 0);
+    expect(h).toBeCloseTo(60, 0);
+    expect(t).toBeCloseTo(2, 3);
+    // 60 × 60 less the 30 × 30 window, corners slightly rounded
+    expect(measureVolume(result.parts[0].shape) / ((3600 - 900) * 2)).toBeCloseTo(1, 1);
+    // Inverted, the window and the surroundings are the shape; the frame is not.
+    const inverse = run('relief', { shape: 'image', image: framePicture(), invert: true, size: 60, style: 'shape', relief: 2 }).result;
+    expect(measureVolume(inverse.parts[0].shape)).toBeGreaterThan(900 * 2);
+    expect(() => run('relief', { shape: 'image' })).toThrow(ParamError);
+    expect(() => run('relief', { shape: 'image', image: framePicture(), threshold: 5, invert: false, size: 60 })).not.toThrow();
+  });
+
+  it('engraves, cuts through and keeps a separate part for a second colour', () => {
+    const plate = 70 * (run('relief').result.notes.find((n) => n.key === 'note.plateSize')!.vars!.h as number) * 2.4;
+    const engraved = run('relief', { style: 'engraved', relief: 1 }).result;
+    const cutout = run('relief', { style: 'cutout' }).result;
+    const separate = run('relief', { separate: true }).result;
+    expect(size(engraved.parts[0].shape)[2]).toBeCloseTo(2.4, 3);
+    expect(measureVolume(engraved.parts[0].shape)).toBeLessThan(plate - 500);
+    expect(measureVolume(cutout.parts[0].shape)).toBeLessThan(measureVolume(engraved.parts[0].shape));
+    expect(separate.parts.map((part) => part.name)).toEqual(['plate', 'motif']);
+    expect(separate.parts[1].shape.boundingBox.bounds[0][2]).toBeCloseTo(2.4, 3);
+  });
+
+  it('lets the plate follow the outline, with a lug for a ring', () => {
+    const rect = measureVolume(run('relief', { style: 'engraved', relief: 0.01 }).result.parts[0].shape);
+    const contour = run('relief', { plateShape: 'contour', padding: 3, style: 'engraved', relief: 0.01 }).result;
+    expect(warnings(contour)).toEqual([]);
+    expect(contour.parts[0].shape.solids.length).toBe(1);
+    expect(measureVolume(contour.parts[0].shape)).toBeLessThan(rect * 0.7);
+    // The margin goes round the tips of the star in an arc.
+    expect(size(contour.parts[0].shape)[0]).toBeGreaterThan(65.5);
+    expect(size(contour.parts[0].shape)[0]).toBeLessThan(67.5);
+    const lug = run('relief', { plateShape: 'contour', padding: 3, hole: 'top' }).result.parts[0].shape;
+    expect(lug.solids.length).toBe(1);
+    expect(size(lug)[1]).toBeGreaterThan(size(contour.parts[0].shape)[1] + 1);
+    for (const plateShape of ['rect', 'ellipse']) {
+      const holes = run('relief', { plateShape, hole: 'corners' }).result;
+      expect(holes.parts[0].shape.solids.length, plateShape).toBe(1);
+    }
+  });
+
+  it('builds every relief template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.relief.templates!)) {
+      const { result } = run('relief', fromTemplate(GENERATORS.relief, name));
+      expect(warnings(result), name).toEqual([]);
+      expect(result.parts.length, name).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('cutter', () => {
+  it('puts a wall of constant thickness around the shape', () => {
+    const { result } = run('cutter', { shape: 'circle', size: 60, wall: 1.2, edge: 1.2, flangeWidth: 0, height: 12 });
+    expect(warnings(result)).toEqual([]);
+    const cutter = result.parts[0].shape;
+    const [w, d, h] = size(cutter);
+    expect(w).toBeCloseTo(62.4, 1);
+    expect(d).toBeCloseTo(62.4, 1);
+    expect(h).toBeCloseTo(12, 3);
+    expect(cutter.solids.length).toBe(1);
+    expect(measureVolume(cutter) / (Math.PI * (31.2 ** 2 - 30 ** 2) * 12)).toBeCloseTo(1, 1);
+  });
+
+  it('adds a grip rim below and a thin cutting edge on top', () => {
+    const plain = measureVolume(run('cutter', { shape: 'circle', size: 60, wall: 1.2, edge: 1.2, flangeWidth: 0 }).result.parts[0].shape);
+    const rim = run('cutter', { shape: 'circle', size: 60, wall: 1.2, edge: 1.2, flangeWidth: 5, flangeThickness: 2 }).result.parts[0].shape;
+    expect(size(rim)[0]).toBeCloseTo(70, 1);
+    expect(rim.solids.length).toBe(1);
+    expect(measureVolume(rim) - plain).toBeCloseTo(Math.PI * (35 ** 2 - 31.2 ** 2) * 2, -1.5);
+    const sharp = run('cutter', { shape: 'circle', size: 60, wall: 1.2, edge: 0.5, edgeHeight: 3, flangeWidth: 0 }).result.parts[0].shape;
+    expect(sharp.solids.length).toBe(1);
+    expect(plain - measureVolume(sharp)).toBeCloseTo(Math.PI * (31.2 ** 2 - 30.5 ** 2) * 3, -1.5);
+  });
+
+  it('follows the outer outline of a picture and can widen it', () => {
+    const framed = run('cutter', { shape: 'image', image: framePicture(), size: 50, smooth: 0, flangeWidth: 0, edge: 1.2 }).result;
+    expect(warnings(framed)).toEqual([]);
+    // The window inside the frame is dough as well: one wall, not two.
+    expect(framed.parts[0].shape.solids.length).toBe(1);
+    expect(size(framed.parts[0].shape)[0]).toBeCloseTo(52.4, 0);
+    expect(measureVolume(framed.parts[0].shape) / (4 * 51.2 * 1.2 * 14)).toBeCloseTo(1, 1);
+    const wider = run('cutter', { shape: 'image', image: framePicture(), size: 50, offset: 2, flangeWidth: 0 }).result;
+    expect(size(wider.parts[0].shape)[0]).toBeCloseTo(56.4, 0);
+    // Two shapes in one picture give two cutters, and a word about it.
+    const data = new Uint8Array(120 * 40);
+    for (let y = 5; y < 35; y++) for (let x = 5; x < 115; x++) if (x < 35 || x >= 85) data[y * 120 + x] = 255;
+    const two = run('cutter', { shape: 'image', image: encodeImage({ width: 120, height: 40, data }), size: 80 }).result;
+    expect(warnings(two)).toEqual(['note.cutterPieces']);
+  });
+
+  it('builds every cutter template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.cutter.templates!)) {
+      const { result } = run('cutter', fromTemplate(GENERATORS.cutter, name));
+      expect(warnings(result), name).toEqual([]);
+      expect(result.parts[0].shape.solids.length, name).toBe(1);
+      expect(size(result.parts[0].shape)[2], name).toBeCloseTo(result.parts[0].shape.boundingBox.bounds[1][2], 3);
+    }
+  });
+});
+
+/** Volume enclosed by a mesh; only meaningful, and positive, if it is closed and faces outwards. */
+function meshVolume({ vertices: v, triangles: t }: WeldedMesh): number {
+  let six = 0;
+  for (let i = 0; i < t.length; i += 3) {
+    const [a, b, c] = [3 * t[i], 3 * t[i + 1], 3 * t[i + 2]];
+    six += v[a] * (v[b + 1] * v[c + 2] - v[b + 2] * v[c + 1]) - v[a + 1] * (v[b] * v[c + 2] - v[b + 2] * v[c]) + v[a + 2] * (v[b] * v[c + 1] - v[b + 1] * v[c]);
+  }
+  return six / 6;
+}
+
+/** Edges that are not shared by exactly two triangles running in opposite directions. */
+function openEdges({ vertices, triangles }: WeldedMesh): number {
+  const edges = new Map<number, number>();
+  const n = vertices.length / 3;
+  for (let i = 0; i < triangles.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const key = triangles[i + k] * n + triangles[i + ((k + 1) % 3)];
+      edges.set(key, (edges.get(key) ?? 0) + 1);
+    }
+  }
+  let open = 0;
+  for (const [key, count] of edges) if (count !== 1 || edges.get((key % n) * n + Math.floor(key / n)) !== 1) open++;
+  return open;
+}
+
+describe('lithophane', () => {
+  const litho = (overrides: Params = {}) => ({ ...defaults(GENERATORS.lithophane), ...overrides }) as unknown as LithophaneParams;
+  const grey = (value: number, width = 40, height = 30): Bitmap => ({ width, height, data: new Uint8Array(width * height).fill(value) });
+
+  it('builds a closed mesh for every form', () => {
+    for (const form of ['flat', 'arc', 'cylinder']) {
+      const { result } = run('lithophane', { form });
+      expect(result.parts).toHaveLength(0);
+      const { mesh } = result.meshes![0];
+      expect(openEdges(mesh), form).toBe(0);
+      expect(meshVolume(mesh), form).toBeGreaterThan(1000);
+      expect(mesh.shade!.length, form).toBe(mesh.vertices.length / 3);
+      expect(vertexNormals(mesh).some((v) => Number.isNaN(v)), form).toBe(false);
+    }
+    expect(GENERATORS.lithophane.meshOnly).toBe(true);
+  });
+
+  it('makes bright thin and dark thick, or the reverse', () => {
+    const volume = (value: number, overrides: Params = {}) => {
+      const { mesh, width, height } = lithophaneMesh(litho({ border: 0, width: 80, ...overrides }), grey(value));
+      expect(width).toBeCloseTo(80, 3);
+      expect(height).toBeCloseTo(60, 0);
+      return meshVolume(mesh) / (width * height);
+    };
+    expect(volume(255)).toBeCloseTo(0.6, 3);
+    expect(volume(0)).toBeCloseTo(3, 3);
+    expect(volume(128)).toBeCloseTo(0.6 + 2.4 * (127 / 255), 2);
+    expect(volume(255, { negative: true })).toBeCloseTo(3, 3);
+    expect(volume(255, { minThickness: 1, maxThickness: 4 })).toBeCloseTo(1, 3);
+  });
+
+  it('frames the picture and stands it upright, facing the front', () => {
+    const { mesh, width, height } = lithophaneMesh(litho({ width: 100, border: 5 }), grey(255, 60, 40));
+    expect(width).toBeCloseTo(100, 0);
+    const v = mesh.vertices;
+    let [x0, x1, y0, y1, z0, z1] = [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity];
+    for (let i = 0; i < v.length; i += 3) {
+      x0 = Math.min(x0, v[i]);
+      x1 = Math.max(x1, v[i]);
+      y0 = Math.min(y0, v[i + 1]);
+      y1 = Math.max(y1, v[i + 1]);
+      z0 = Math.min(z0, v[i + 2]);
+      z1 = Math.max(z1, v[i + 2]);
+    }
+    expect([x0, x1]).toEqual([-width / 2, width / 2].map((n) => expect.closeTo(n, 3)));
+    expect([z0, z1]).toEqual([0, height].map((n) => expect.closeTo(n, 3)));
+    // The back is flat at y = 0; the frame, as thick as the darkest spot, comes forward.
+    expect(y1).toBeCloseTo(0, 6);
+    expect(y0).toBeCloseTo(-3, 6);
+    const picture = (90 * (height - 10) * 0.6 + (width * height - 90 * (height - 10)) * 3) / (width * height);
+    expect(meshVolume(mesh) / (width * height)).toBeCloseTo(picture, 1);
+  });
+
+  it('bends into an arc or closes into a cylinder of the given diameter', () => {
+    const flat = lithophaneMesh(litho({ width: 100, border: 0 }), grey(0, 80, 40));
+    const arc = lithophaneMesh(litho({ form: 'arc', angle: 180, width: 100, border: 0 }), grey(0, 80, 40));
+    const xs = (mesh: WeldedMesh) => mesh.vertices.filter((_, i) => i % 3 === 0);
+    const extent = (values: Float32Array) => values.reduce((m, x) => Math.max(m, x), -Infinity) - values.reduce((m, x) => Math.min(m, x), Infinity);
+    // Half a circle of 100 mm: radius 100/π at the back, 3 mm more in front
+    expect(extent(xs(arc.mesh))).toBeCloseTo(2 * (100 / Math.PI + 3), 1);
+    expect(meshVolume(arc.mesh)).toBeGreaterThan(meshVolume(flat.mesh));
+    const tube = lithophaneMesh(litho({ form: 'cylinder', diameter: 60, border: 0 }), grey(0, 120, 40));
+    expect(extent(xs(tube.mesh))).toBeCloseTo(60, 1);
+    expect(openEdges(tube.mesh)).toBe(0);
+    expect(meshVolume(tube.mesh) / (Math.PI * (30 ** 2 - 27 ** 2) * tube.height)).toBeCloseTo(1, 1);
+  });
+
+  it('uses the picture it is given and refuses a frame that leaves no room', () => {
+    const image = encodeImage(grey(200, 64, 48));
+    const { result } = run('lithophane', { image });
+    expect(result.notes.map((n) => n.key)).not.toContain('note.lithoSample');
+    expect(run('lithophane').result.notes.map((n) => n.key)).toContain('note.lithoSample');
+    expect(() => run('lithophane', { width: 20, border: 8 })).toThrow(ParamError);
+    expect(() => run('lithophane', { image: '4x4:AAAA' })).toThrow(ParamError);
+  });
+
+  it('writes its mesh as STL and 3MF', () => {
+    const { mesh } = run('lithophane').result.meshes![0];
+    const stl = writeStl([mesh]);
+    expect(stl.byteLength).toBe(84 + 50 * (mesh.triangles.length / 3));
+    expect(new DataView(stl.buffer).getUint32(80, true)).toBe(mesh.triangles.length / 3);
+    const zip = write3mf([{ name: 'lithophane', mesh }]);
+    expect(String.fromCharCode(zip[0], zip[1])).toBe('PK');
+  });
+
+  it('builds every lithophane template cleanly', () => {
+    for (const name of Object.keys(GENERATORS.lithophane.templates!)) {
+      const { result } = run('lithophane', fromTemplate(GENERATORS.lithophane, name));
+      expect(openEdges(result.meshes![0].mesh), name).toBe(0);
+    }
+  });
+});
+
 describe('parameters', () => {
+  it('accepts a picture only in its packed form', () => {
+    const image = encodeImage(sampleMask('heart', 32));
+    expect(sanitize(GENERATORS.cutter, { image }).image).toBe(image);
+    for (const bad of ['<svg/>', 'data:image/png;base64,AAAA', 42, '12x12:not base64!']) expect(sanitize(GENERATORS.cutter, { image: bad }).image, String(bad)).toBe('');
+    expect(sanitize(GENERATORS.lithophane, { image: 'x'.repeat(500_000) }).image).toBe('');
+  });
+
   it('sanitizes lists and clamps their fields', () => {
     const p = sanitize(GENERATORS.enclosure, { openings: [{ type: 'speaker', diameter: 9999 }, 'junk', { type: 'nope' }], wall: 'x' });
     const list = p.openings as Params[];

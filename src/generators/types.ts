@@ -46,7 +46,20 @@ export interface TextParam extends ParamBase {
   maxLength?: number;
 }
 
-export type FieldDef = NumberParam | BoolParam | SelectParam | TextParam;
+/**
+ * A picture the user loads, kept as a small greyscale bitmap (see `image.ts`).
+ * Empty until one is chosen.
+ */
+export interface ImageParam extends ParamBase {
+  type: 'image';
+  default: string;
+  /** `mask` keeps the silhouette, cropped to it; `photo` keeps the brightness of the whole picture. */
+  mode: 'mask' | 'photo';
+  /** Longer side of the stored bitmap in pixels. */
+  maxSize: number;
+}
+
+export type FieldDef = NumberParam | BoolParam | SelectParam | TextParam | ImageParam;
 
 /** A list the user can add items to; inside `item`, `showIf` receives the item. */
 export interface ListParam extends ParamBase {
@@ -58,13 +71,15 @@ export interface ListParam extends ParamBase {
 
 export type ParamDef = FieldDef | ListParam;
 
-export type GeneratorId = 'enclosure' | 'adapter' | 'organizer' | 'gridfinity' | 'hook' | 'text';
+export type GeneratorId = 'enclosure' | 'adapter' | 'organizer' | 'gridfinity' | 'hook' | 'text' | 'gear' | 'qr' | 'relief' | 'cutter' | 'lithophane';
 
 export interface GeneratorMeta {
   id: GeneratorId;
   params: ParamDef[];
   /** Named starting points: overrides on top of the defaults. */
   templates?: Record<string, Params>;
+  /** The model is a mesh rather than CAD geometry, so it cannot be written as STEP. */
+  meshOnly?: boolean;
 }
 
 /** The complete parameters of a template. */
@@ -77,6 +92,10 @@ export interface Note {
   key: string;
   vars?: Record<string, string | number>;
 }
+
+/** An encoded picture: width, height and the deflated pixels in base64. */
+export const IMAGE_PATTERN = /^(\d{1,4}x\d{1,4}:[A-Za-z0-9+/]+=*)?$/;
+const IMAGE_MAX_CHARS = 400_000;
 
 const fieldDefaults = (defs: FieldDef[]): Params => Object.fromEntries(defs.map((d) => [d.key, d.default]));
 
@@ -94,6 +113,7 @@ function sanitizeField(d: FieldDef, v: unknown): Value {
     return Number.isFinite(n) ? Math.min(d.max, Math.max(d.min, n)) : d.default;
   }
   if (d.type === 'bool') return typeof v === 'boolean' ? v : d.default;
+  if (d.type === 'image') return typeof v === 'string' && v.length <= IMAGE_MAX_CHARS && IMAGE_PATTERN.test(v) ? v : d.default;
   if (d.type === 'text') return typeof v === 'string' && v.length <= (d.maxLength ?? 80) && new RegExp(d.pattern).test(v) ? v : d.default;
   return typeof v === 'string' && d.options.includes(v) ? v : d.default;
 }

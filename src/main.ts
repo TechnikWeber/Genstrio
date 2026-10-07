@@ -4,6 +4,7 @@ import { GENERATOR_IDS, GENERATORS } from './generators/meta';
 import { defaults, fromTemplate, newItem, sanitize, type FieldDef, type GeneratorId, type ListParam, type Note, type Params, type Value } from './generators/types';
 import { getLang, setLang, t, type Lang } from './i18n';
 import { formatLength, fromUnit, getUnit, parseLength, setUnit, unitStep, UNITS, type Unit } from './units';
+import { drawPicture, readPicture } from './picture';
 import { Viewer } from './viewer';
 
 declare const __APP_VERSION__: string;
@@ -25,6 +26,16 @@ const ICONS: Record<GeneratorId, string> = {
     '<svg viewBox="0 0 24 24"><path d="M7 3v18M7 6h.01M7 18h.01"/><path d="M7 12h6a4 4 0 0 0 4-4V6"/></svg>',
   text:
     '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M8 9.5h8M12 9.5v6"/></svg>',
+  gear:
+    '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/></svg>',
+  qr:
+    '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v.01M14 21v.01M21 21h-3v-3M21 17.5v.01"/></svg>',
+  relief:
+    '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="M12 7.5l1.4 3 3.2.4-2.4 2.2.7 3.2L12 14.7l-2.9 1.6.7-3.2-2.4-2.2 3.2-.4z"/></svg>',
+  cutter:
+    '<svg viewBox="0 0 24 24"><path d="M12 20.5s-8-4.6-8-10.4A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 8 2.1c0 5.8-8 10.4-8 10.4z"/><path d="M12 16.5s-4.5-2.7-4.5-6"/></svg>',
+  lithophane:
+    '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M3.5 17.5l5-5 3.5 3.5 3-3 5.5 5"/></svg>',
 };
 
 // --- state ------------------------------------------------------------------
@@ -261,6 +272,34 @@ function field(def: FieldDef, values: Params, id: string, key: string): HTMLElem
     select.value = values[def.key] as string;
     select.addEventListener('change', () => update(select.value));
     row.append(el('label', { htmlFor: id, textContent: label }), select);
+  } else if (def.type === 'image') {
+    const input = el('input', { type: 'file', accept: '.svg,.png,.jpg,.jpeg,.webp,.gif,.bmp,image/*', hidden: true });
+    const pick = el('button', { type: 'button', id, className: 'ghost', textContent: t('app.imagePick') });
+    const thumb = el('canvas', { className: 'thumb' });
+    const show = () => (thumb.hidden = !drawPicture(thumb, values[def.key] as string, def.mode));
+    const take = async (file?: File) => {
+      if (!file) return;
+      try {
+        update(await readPicture(file, def.mode, def.maxSize));
+        show();
+      } catch {
+        lastNotes = { notes: [], error: 'err.badImage' };
+        renderNotes();
+      }
+    };
+    pick.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      void take(input.files?.[0]);
+      input.value = '';
+    });
+    // A file may also be dropped onto the row.
+    row.addEventListener('dragover', (event) => event.preventDefault());
+    row.addEventListener('drop', (event) => {
+      event.preventDefault();
+      void take(event.dataTransfer?.files[0]);
+    });
+    show();
+    row.append(el('label', { htmlFor: id, textContent: label }), el('div', { className: 'picture' }, [thumb, pick, el('small', { textContent: t(`app.imageHint.${def.mode}`) })]), input);
   } else if (def.type === 'text') {
     const input = def.lines
       ? el('textarea', { id, value: values[def.key] as string, maxLength: def.maxLength ?? 80, rows: 3, spellcheck: false })
@@ -434,7 +473,8 @@ function renderParts(names: string[], canAssemble: boolean) {
 // --- chrome -----------------------------------------------------------------
 
 function renderChrome() {
-  document.title = `Genstrio – ${t(`${current}.title`)}`;
+  // Titles may carry soft hyphens for the narrow buttons.
+  document.title = `Genstrio – ${t(`${current}.title`).replace(/\u00ad/g, '')}`;
   $('#tagline').textContent = t('app.tagline');
   $('#desc').textContent = t(`${current}.desc`);
   $('#hint').textContent = t('app.viewerHint');
@@ -453,6 +493,11 @@ function renderChrome() {
   $('#version').textContent = `Genstrio ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}`;
   assembledEl.textContent = t('app.assembled');
   onlyEl.setAttribute('aria-label', t('app.parts'));
+  // A mesh has no CAD geometry to write as STEP.
+  for (const button of exportEl.querySelectorAll('button')) {
+    const off = button.dataset.format === 'step' && GENERATORS[current].meshOnly === true;
+    button.hidden = off;
+  }
   partNames = '';
   renderTemplates();
   $('#lang').textContent = getLang() === 'de' ? 'EN' : 'DE';
@@ -488,6 +533,7 @@ function select(id: GeneratorId) {
 exportEl.append(
   ...FORMATS.map((format) => {
     const button = el('button', { type: 'button', textContent: format.toUpperCase() });
+    button.dataset.format = format;
     button.addEventListener('click', () => startExport(format));
     return button;
   }),

@@ -1,7 +1,19 @@
 import { BOARDS } from './boards';
 import { FITTINGS } from './fittings';
 import { FONTS } from './fonts';
-import { ADAPTER_TEMPLATES, ENCLOSURE_TEMPLATES, GRIDFINITY_TEMPLATES, HOOK_TEMPLATES, ORGANIZER_TEMPLATES, TEXT_TEMPLATES } from './templates';
+import {
+  ADAPTER_TEMPLATES,
+  CUTTER_TEMPLATES,
+  ENCLOSURE_TEMPLATES,
+  GEAR_TEMPLATES,
+  GRIDFINITY_TEMPLATES,
+  HOOK_TEMPLATES,
+  LITHOPHANE_TEMPLATES,
+  ORGANIZER_TEMPLATES,
+  QR_TEMPLATES,
+  RELIEF_TEMPLATES,
+  TEXT_TEMPLATES,
+} from './templates';
 import type { FieldDef, GeneratorId, GeneratorMeta, Params } from './types';
 
 const hasPcb = (p: Params) => p.pcb === true;
@@ -332,5 +344,132 @@ export const text: GeneratorMeta = {
   ],
 };
 
-export const GENERATORS: Record<GeneratorId, GeneratorMeta> = { enclosure, adapter, organizer, gridfinity, hook, text };
+const isSpur = is('kind', 'spur');
+const isRack = is('kind', 'rack');
+const bored = (p: Params) => isSpur(p) && p.bore !== 'none';
+
+export const gear: GeneratorMeta = {
+  id: 'gear',
+  templates: GEAR_TEMPLATES,
+  params: [
+    { key: 'kind', group: 'teeth', type: 'select', options: ['spur', 'rack'], default: 'spur' },
+    // The module is a size in mm by definition, whatever unit the lengths are shown in.
+    { key: 'module', group: 'teeth', type: 'number', min: 0.3, max: 10, sliderMax: 5, step: 0.05, default: 1.5 },
+    { key: 'teeth', group: 'teeth', type: 'number', min: 6, max: 200, sliderMax: 80, step: 1, default: 20, showIf: isSpur },
+    { key: 'teeth2', group: 'teeth', type: 'number', min: 0, max: 200, sliderMax: 80, step: 1, default: 0, showIf: isSpur },
+    { key: 'rackTeeth', group: 'teeth', type: 'number', min: 2, max: 100, sliderMax: 40, step: 1, default: 12, showIf: isRack },
+    { key: 'rackHeight', group: 'teeth', type: 'number', min: 1, max: 50, sliderMax: 20, step: 0.5, default: 6, unit: 'mm', showIf: isRack },
+    { key: 'thickness', group: 'teeth', type: 'number', min: 1, max: 100, sliderMax: 30, step: 0.5, default: 8, unit: 'mm' },
+    { key: 'pressureAngle', group: 'teeth', type: 'select', options: ['14.5', '20', '25'], default: '20' },
+    { key: 'helix', group: 'teeth', type: 'number', min: 0, max: 45, step: 1, default: 0, unit: '°', showIf: isSpur },
+    { key: 'herringbone', group: 'teeth', type: 'bool', default: false, showIf: (p) => isSpur(p) && (p.helix as number) > 0 },
+    { key: 'backlash', group: 'teeth', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, unit: 'mm' },
+
+    { key: 'bore', group: 'bore', type: 'select', options: ['none', 'round', 'd', 'hex', 'square'], default: 'round', showIf: isSpur },
+    { key: 'boreDiameter', group: 'bore', type: 'number', min: 1, max: 100, sliderMax: 30, step: 0.05, default: 5, unit: 'mm', showIf: bored },
+    { key: 'boreFlat', group: 'bore', type: 'number', min: 0.1, max: 10, sliderMax: 3, step: 0.05, default: 0.5, unit: 'mm', showIf: (p) => isSpur(p) && p.bore === 'd' },
+    { key: 'hubHeight', group: 'bore', type: 'number', min: 0, max: 50, sliderMax: 20, step: 0.5, default: 0, unit: 'mm', showIf: isSpur },
+    { key: 'hubDiameter', group: 'bore', type: 'number', min: 3, max: 200, sliderMax: 60, step: 0.5, default: 12, unit: 'mm', showIf: (p) => isSpur(p) && (p.hubHeight as number) > 0 },
+  ],
+};
+
+const labelled2 = (p: Params) => String(p.label).trim() !== '';
+
+export const qr: GeneratorMeta = {
+  id: 'qr',
+  templates: QR_TEMPLATES,
+  params: [
+    { key: 'text', group: 'code', type: 'text', default: 'https://technikweber.github.io/Genstrio/', pattern: '^[\\s\\S]{1,300}$', lines: true, maxLength: 300 },
+    { key: 'ecc', group: 'code', type: 'select', options: ['L', 'M', 'Q', 'H'], default: 'M' },
+    { key: 'size', group: 'code', type: 'number', min: 10, max: 300, sliderMax: 120, step: 0.5, default: 45, unit: 'mm' },
+    { key: 'quiet', group: 'code', type: 'number', min: 1, max: 8, step: 1, default: 4 },
+    { key: 'style', group: 'code', type: 'select', options: ['raised', 'engraved'], default: 'raised' },
+    { key: 'relief', group: 'code', type: 'number', min: 0.2, max: 5, sliderMax: 2, step: 0.1, default: 0.6, unit: 'mm' },
+    { key: 'separate', group: 'code', type: 'bool', default: false },
+
+    { key: 'plateThickness', group: 'plate', type: 'number', min: 0.6, max: 20, sliderMax: 6, step: 0.1, default: 1.6, unit: 'mm' },
+    { key: 'cornerRadius', group: 'plate', type: 'number', min: 0, max: 60, sliderMax: 20, step: 0.5, default: 3, unit: 'mm' },
+    { key: 'hole', group: 'plate', type: 'select', options: ['none', 'top', 'left'], default: 'none' },
+    { key: 'holeDiameter', group: 'plate', type: 'number', min: 1, max: 20, sliderMax: 10, step: 0.1, default: 4, unit: 'mm', showIf: (p) => p.hole !== 'none' },
+
+    { key: 'label', group: 'label', type: 'text', default: '', pattern: '^[\\s\\S]{0,60}$', lines: true, maxLength: 60 },
+    { key: 'font', group: 'label', type: 'select', options: FONTS, default: 'inter', showIf: labelled2 },
+    { key: 'labelSize', group: 'label', type: 'number', min: 2, max: 40, sliderMax: 15, step: 0.5, default: 5, unit: 'mm', showIf: labelled2 },
+  ],
+};
+
+export const SHAPES = ['image', 'heart', 'star', 'flower', 'moon', 'circle'];
+const ownImage = is('shape', 'image');
+
+/** Where a shape comes from: a built-in one or a picture, and how the picture is read. */
+const motif = (shape: string, size: number, smooth: number): FieldDef[] => [
+  { key: 'shape', group: 'motif', type: 'select', options: SHAPES, default: shape },
+  { key: 'image', group: 'motif', type: 'image', default: '', mode: 'mask', maxSize: 360, showIf: ownImage },
+  { key: 'invert', group: 'motif', type: 'bool', default: false, showIf: ownImage },
+  { key: 'threshold', group: 'motif', type: 'number', min: 5, max: 95, step: 1, default: 50, unit: '%', showIf: ownImage },
+  { key: 'smooth', group: 'motif', type: 'number', min: 0, max: 6, step: 1, default: smooth, showIf: ownImage },
+  { key: 'size', group: 'motif', type: 'number', min: 10, max: 400, sliderMax: 200, step: 1, default: size, unit: 'mm' },
+];
+
+const onReliefPlate = (p: Params) => p.style !== 'shape';
+
+export const relief: GeneratorMeta = {
+  id: 'relief',
+  templates: RELIEF_TEMPLATES,
+  params: [
+    ...motif('star', 60, 1),
+    { key: 'mirror', group: 'motif', type: 'bool', default: false },
+
+    { key: 'style', group: 'relief', type: 'select', options: ['raised', 'engraved', 'cutout', 'shape'], default: 'raised' },
+    { key: 'relief', group: 'relief', type: 'number', min: 0.2, max: 50, sliderMax: 10, step: 0.1, default: 1.2, unit: 'mm', showIf: (p) => p.style !== 'cutout' },
+    { key: 'separate', group: 'relief', type: 'bool', default: false, showIf: is('style', 'raised', 'engraved') },
+
+    { key: 'plateShape', group: 'plate', type: 'select', options: ['rect', 'ellipse', 'contour'], default: 'rect', showIf: onReliefPlate },
+    { key: 'plateThickness', group: 'plate', type: 'number', min: 0.4, max: 30, sliderMax: 10, step: 0.1, default: 2.4, unit: 'mm', showIf: onReliefPlate },
+    { key: 'padding', group: 'plate', type: 'number', min: 0.5, max: 60, sliderMax: 30, step: 0.5, default: 5, unit: 'mm', showIf: onReliefPlate },
+    { key: 'cornerRadius', group: 'plate', type: 'number', min: 0, max: 60, sliderMax: 20, step: 0.5, default: 3, unit: 'mm', showIf: (p) => onReliefPlate(p) && p.plateShape === 'rect' },
+    { key: 'hole', group: 'plate', type: 'select', options: ['none', 'top', 'left', 'corners'], default: 'none', showIf: onReliefPlate },
+    { key: 'holeDiameter', group: 'plate', type: 'number', min: 1, max: 20, sliderMax: 10, step: 0.1, default: 4, unit: 'mm', showIf: (p) => onReliefPlate(p) && p.hole !== 'none' },
+  ],
+};
+
+export const cutter: GeneratorMeta = {
+  id: 'cutter',
+  templates: CUTTER_TEMPLATES,
+  params: [
+    ...motif('heart', 70, 2),
+    { key: 'offset', group: 'motif', type: 'number', min: -5, max: 10, step: 0.1, default: 0, unit: 'mm' },
+
+    { key: 'height', group: 'blade', type: 'number', min: 5, max: 60, sliderMax: 30, step: 0.5, default: 14, unit: 'mm' },
+    { key: 'wall', group: 'blade', type: 'number', min: 0.4, max: 4, step: 0.05, default: 1.2, unit: 'mm' },
+    { key: 'edge', group: 'blade', type: 'number', min: 0.3, max: 4, sliderMax: 2, step: 0.05, default: 0.5, unit: 'mm' },
+    { key: 'edgeHeight', group: 'blade', type: 'number', min: 0.5, max: 20, sliderMax: 8, step: 0.5, default: 2, unit: 'mm', showIf: (p) => (p.edge as number) < (p.wall as number) },
+    { key: 'flangeWidth', group: 'blade', type: 'number', min: 0, max: 20, sliderMax: 10, step: 0.5, default: 4, unit: 'mm' },
+    { key: 'flangeThickness', group: 'blade', type: 'number', min: 0.6, max: 6, sliderMax: 4, step: 0.1, default: 1.6, unit: 'mm' },
+  ],
+};
+
+const bentLitho = is('form', 'arc');
+const flatLitho = is('form', 'flat', 'arc');
+
+export const lithophane: GeneratorMeta = {
+  id: 'lithophane',
+  templates: LITHOPHANE_TEMPLATES,
+  meshOnly: true,
+  params: [
+    { key: 'image', group: 'picture', type: 'image', default: '', mode: 'photo', maxSize: 320 },
+    { key: 'negative', group: 'picture', type: 'bool', default: false },
+
+    { key: 'form', group: 'form', type: 'select', options: ['flat', 'arc', 'cylinder'], default: 'flat' },
+    { key: 'width', group: 'form', type: 'number', min: 20, max: 400, sliderMax: 250, step: 1, default: 100, unit: 'mm', showIf: flatLitho },
+    { key: 'angle', group: 'form', type: 'number', min: 20, max: 270, step: 5, default: 90, unit: '°', showIf: bentLitho },
+    { key: 'diameter', group: 'form', type: 'number', min: 20, max: 300, sliderMax: 200, step: 1, default: 70, unit: 'mm', showIf: is('form', 'cylinder') },
+
+    { key: 'minThickness', group: 'thickness', type: 'number', min: 0.3, max: 3, sliderMax: 2, step: 0.05, default: 0.6, unit: 'mm' },
+    { key: 'maxThickness', group: 'thickness', type: 'number', min: 1, max: 8, sliderMax: 5, step: 0.1, default: 3, unit: 'mm' },
+    { key: 'border', group: 'thickness', type: 'number', min: 0, max: 20, sliderMax: 10, step: 0.5, default: 2, unit: 'mm' },
+  ],
+};
+
+export const GENERATORS: Record<GeneratorId, GeneratorMeta> = { enclosure, adapter, organizer, gridfinity, hook, text, gear, qr, relief, cutter, lithophane };
 export const GENERATOR_IDS = Object.keys(GENERATORS) as GeneratorId[];

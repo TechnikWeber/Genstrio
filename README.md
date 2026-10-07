@@ -6,7 +6,7 @@
 
 Parametric generators for 3D printing. Enter a few dimensions, watch the model being built in 3D, and download it as **STL**, **3MF** or **STEP**.
 
-Genstrio runs entirely in your browser: the geometry is computed locally by a real CAD kernel (OpenCascade compiled to WebAssembly). No account, no upload, no server-side processing.
+Genstrio runs entirely in your browser: the geometry is computed locally by a real CAD kernel (OpenCascade compiled to WebAssembly). No account, no upload, no server-side processing – pictures you load for a relief, a cutter or a lithophane never leave your computer either.
 
 The interface is in English; the **DE** button in the header switches to German.
 
@@ -22,6 +22,11 @@ The interface is in English; the **DE** button in the header switches to German.
 | **Gridfinity** | Bins and baseplates on the 42 mm [Gridfinity](https://gridfinity.xyz) grid. Bins from 1 × 1 to 10 × 10 units with or without stacking lip, any number of compartments, lowered dividers, a scoop at the front, label ledges (full width, left, centred or right), adjustable wall and floor, and magnet and/or M3 screw holes in the corners or in every foot. Instead of an open bin you can make a **holder** with a field of pockets – for hex bits, AAA/AA/18650 cells, pens or any round, hexagonal or square size – or a solid block. Baseplates as an open frame or with a floor, magnet holes and countersunk holes to screw them down. Enter the **inside size of a drawer** and the plate fills it completely: the grid is centred or pushed to a side, the leftover becomes a solid rim, and plates larger than your print bed are split into pieces that fit; pieces that are the same after half a turn are built and exported only once. |
 | **Hooks & brackets** | Wall hooks (reach, upturned tip, upward slope and bend radius adjustable), cradles fitted to the diameter of a handle or pipe, shelf brackets with a supporting rib and holes for the shelf, and rails with up to ten hooks. Fastened with screws (countersunk or plain), adhesive tape, hung over a door of any thickness, or hooked into a pegboard. Single hooks come out lying on their side, so the layers run along the arm. |
 | **Text & signs** | Signs, labels, key tags, stamps, stencils and loose lettering from one or more lines of text, in nine fonts. Text raised on a plate, engraved into it, cut through, or as letters alone with a bar that joins them. Rectangular, pill-shaped or elliptical plate with a raised border, holes for a key ring or screws, mirrored text for stamps, and the text as a separate part for printing in a second colour. |
+| **Gears** | Involute gears by module, tooth count and pressure angle (14.5°, 20°, 25°): spur, helical or herringbone. Optionally with the matching mating gear straight away; the app states centre distance and ratio, and **Assembled** shows the gears in mesh. Bore round, with a flat for D shafts, hexagonal or square, plus a hub and adjustable backlash. Racks with the same pitch as well. |
+| **QR code** | QR codes for links, WiFi access or any text, raised on a plate or engraved into it, optionally as a separate part for a second colour. Error correction L to H, adjustable quiet zone, a hole for a key ring and a line of text below the code in any font of the text generator. The app states the module size and warns when it gets too fine for the nozzle. |
+| **Logo relief** | Load a logo or drawing as **SVG, PNG or JPG** (or take a built-in shape) and print it as a relief, an engraving, a stencil or a loose shape. The plate is rectangular, elliptical, or follows the outline of the motif like the edge of a sticker, with a lug for a key ring. Threshold, smoothing and “swap light and dark” decide what counts as shape; the motif mirrored for stamps and as a separate part for a second colour. |
+| **Cookie cutter** | Cutters for cookies, fondant or clay from the outline of a picture or a built-in shape (heart, star, flower, moon, circle). A wall of the same thickness all round, a narrow cutting edge on top, a grip rim below; the outline can be widened or narrowed. Lies ready to print on its grip rim. |
+| **Lithophane** | A photo as a relief that only becomes a picture against the light: a flat panel, curved (stands on its own) or a cylinder for a lamp shade. Thinnest and thickest spot, frame and negative are adjustable; the preview shows the picture the way it looks lit from behind. Exports as STL or 3MF. |
 
 ### Screenshots
 
@@ -33,8 +38,14 @@ The interface is in English; the **DE** button in the header switches to German.
 | Gridfinity bin with compartments, scoop and label ledges | Gridfinity baseplates that fill a drawer, split for the printer |
 | [![Hooks & brackets: a key rail](docs/images/hook.png)](docs/images/hook.png) | [![Text & signs: door sign with border and screw holes](docs/images/text.png)](docs/images/text.png) |
 | Hooks & brackets: a key rail | Text & signs: door sign with border and screw holes |
+| [![Gears: a herringbone pair in mesh](docs/images/gear.png)](docs/images/gear.png) | [![QR code with a label](docs/images/qr.png)](docs/images/qr.png) |
+| Gears: a herringbone pair in mesh | QR code with a label |
+| [![Logo relief from an SVG file](docs/images/relief.png)](docs/images/relief.png) | [![Cookie cutter from the outline of a heart](docs/images/cutter.png)](docs/images/cutter.png) |
+| Logo relief from an SVG file | Cookie cutter: heart |
+| [![Lithophane: curved panel](docs/images/lithophane.png)](docs/images/lithophane.png) | |
+| Lithophane: curved panel, the way it looks against the light | |
 
-More generators are planned, see [Roadmap](#roadmap).
+What is planned next is in the [Roadmap](#roadmap).
 
 ## Run it locally
 
@@ -74,7 +85,7 @@ Set `GENSTRIO_PORT` to use a port other than 4173.
 
 - **STL** contains all parts in one mesh, laid out for printing.
 - **3MF** contains each part as a separate object.
-- **STEP** contains the exact CAD geometry, for further editing in FreeCAD, Fusion and the like.
+- **STEP** contains the exact CAD geometry, for further editing in FreeCAD, Fusion and the like. A lithophane is a triangle mesh and can therefore only be saved as STL or 3MF.
 
 Dimensions can be shown and entered in millimetres, centimetres or inches (selector at the top of the panel; inches also as fractions such as `3 1/2`); exported files are always in millimetres. If a model has several parts, the selector below the export buttons lets you download just one of them, for example only the lid. The drawer organizer exports each box size once; the app tells you how many to print.
 
@@ -101,6 +112,8 @@ How the code is organised:
 
 Board hole patterns live in `src/generators/boards.ts`, templates in `src/generators/templates.ts`.
 
+Pictures are reduced to a small greyscale bitmap in the browser (`src/picture.ts`, `src/generators/image.ts`) and stored like any other value. `src/generators/build/trace.ts` turns that into a distance field and traces its contour lines: the line at 0 is the outline, any other the same outline evenly widened or narrowed – which is how a cutter gets its wall.
+
 To add a generator, declare its parameters in `meta.ts`, write a build function, register it in `build/index.ts`, and add its texts to `i18n.ts`.
 
 ## Roadmap
@@ -108,12 +121,14 @@ To add a generator, declare its parameters in `meta.ts`, write a build function,
 - More board templates, including the connector cutouts of BeagleBone and other single-board computers
 - Print-in-place hinges and latches
 - More fittings: pipe clamps, T-pieces, hose couplings
-- Further generators: gears, QR codes in 3D, logo reliefs, cookie cutters
+- Gears: ring gears and planetary sets, bevel gears
+- Cookie cutters with a stamp for the lines inside
+- Reliefs with a soft height gradient from greyscale pictures
 
 ## License
 
 [AGPL-3.0-or-later](LICENSE). The models you generate are yours, without restriction.
 
-Genstrio builds on [replicad](https://github.com/sgenoud/replicad) (MIT), [OpenCascade](https://dev.opencascade.org) (LGPL-2.1), [three.js](https://threejs.org) (MIT) and [fflate](https://github.com/101arrowz/fflate) (MIT).
+Genstrio builds on [replicad](https://github.com/sgenoud/replicad) (MIT), [OpenCascade](https://dev.opencascade.org) (LGPL-2.1), [three.js](https://threejs.org) (MIT), [fflate](https://github.com/101arrowz/fflate) (MIT) and [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT). “QR Code” is a registered trademark of DENSO WAVE.
 
 The fonts of the text generator – Inter, Fredoka, Oswald, Bebas Neue, Zilla Slab, Playfair Display, JetBrains Mono, Pacifico and Allerta Stencil – are licensed under the [SIL Open Font License 1.1](https://openfontlicense.org), which allows free use, also commercially, in anything you make with them. The font files and their licence texts are in [`src/fonts`](src/fonts).
