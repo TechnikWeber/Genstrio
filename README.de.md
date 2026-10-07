@@ -8,7 +8,7 @@ Parametrische Generatoren für den 3D-Druck. Ein paar Maße eingeben, dem Modell
 
 Genstrio läuft vollständig im Browser: Die Geometrie berechnet ein echter CAD-Kern (OpenCascade, nach WebAssembly kompiliert) lokal auf deinem Rechner. Kein Konto, kein Upload, keine Verarbeitung auf einem Server – auch Bilder, die du für ein Relief, einen Ausstecher oder eine Lithophanie lädst, verlassen deinen Rechner nicht.
 
-Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch um.
+Auf der Startseite wählst du, was du drucken möchtest; das Haus-Symbol führt von jedem Generator dorthin zurück. Die Oberfläche startet auf Englisch; Sprache und Maßeinheit stellst du über das Zahnrad-Symbol ein.
 
 [![Genstrio mit einem Elektronikgehäuse, dessen Deckel einen vertieften Text trägt](docs/images/enclosure.png)](docs/images/enclosure.png)
 
@@ -29,6 +29,8 @@ Die Oberfläche startet auf Englisch; der Knopf **DE** oben schaltet auf Deutsch
 | **Lithophanie** | Ein Foto als Relief, das erst im Gegenlicht zum Bild wird: als flache Tafel, gebogen (steht von selbst) oder als Zylinder für einen Lampenschirm. Dünnste und dickste Stelle, Rahmen und Negativ sind einstellbar; die Vorschau zeigt das Bild so, wie es durchleuchtet wirkt. Export als STL oder 3MF. |
 
 ### Bildschirmfotos
+
+[![Die Startseite: eine Karte je Generator](docs/images/home.png)](docs/images/home.png)
 
 | | |
 | --- | --- |
@@ -89,7 +91,7 @@ Mit `GENSTRIO_PORT` wählst du einen anderen Port als 4173.
 - **3MF** enthält jedes Teil als eigenes Objekt.
 - **STEP** enthält die exakte CAD-Geometrie zum Weiterbearbeiten in FreeCAD, Fusion und Ähnlichem. Eine Lithophanie ist ein Dreiecksnetz und lässt sich deshalb nur als STL oder 3MF speichern.
 
-Maße lassen sich in Millimetern, Zentimetern oder Zoll anzeigen und eingeben (Auswahl oben im Panel; Zoll auch als Bruch wie `3 1/2`); exportierte Dateien sind immer in Millimetern. Besteht ein Modell aus mehreren Teilen, lässt sich über die Auswahl unter den Export-Knöpfen auch nur eines herunterladen, etwa nur der Deckel. Der Schubladen-Organizer exportiert jede Boxgröße einmal; die App nennt dir die Stückzahl.
+Maße lassen sich in Millimetern, Zentimetern oder Zoll anzeigen und eingeben (Auswahl in den Einstellungen hinter dem Zahnrad-Symbol; Zoll auch als Bruch wie `3 1/2`); exportierte Dateien sind immer in Millimetern. Besteht ein Modell aus mehreren Teilen, lässt sich über die Auswahl unter den Export-Knöpfen auch nur eines herunterladen, etwa nur der Deckel. Der Schubladen-Organizer exportiert jede Boxgröße einmal; die App nennt dir die Stückzahl.
 
 ## Arbeit speichern
 

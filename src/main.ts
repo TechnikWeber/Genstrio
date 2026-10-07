@@ -66,9 +66,11 @@ const openGroups: Record<string, boolean> = saved.open ?? {};
 const userTemplates = saved.templates ?? {};
 
 // A shared link carries the generator and its parameters in the URL fragment.
+let sharedLink = false;
 try {
   const shared = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(1).replace(/-/g, '+').replace(/_/g, '/'))))) as { g: GeneratorId; p: Record<string, unknown> };
   if (GENERATOR_IDS.includes(shared.g)) {
+    sharedLink = true;
     saved.generator = shared.g;
     saved.params = { ...saved.params, [shared.g]: shared.p };
   }
@@ -117,6 +119,10 @@ const statusEl = $('#status');
 const notesEl = $('#notes');
 const notesBox = $<HTMLDetailsElement>('#notes-box');
 const unitEl = $<HTMLSelectElement>('#unit');
+const langEl = $<HTMLSelectElement>('#lang');
+const settingsEl = $<HTMLDialogElement>('#settings');
+const homeEl = $('#home');
+const appEl = $('#app');
 const toolsEl = $('#tools');
 const exportEl = $('#export');
 const templateEl = $<HTMLSelectElement>('#template');
@@ -153,9 +159,6 @@ function renderStatus() {
   statusEl.classList.toggle('busy', busy);
 }
 
-// On a narrow screen the notes would cover much of the preview, so they start folded there.
-const narrow = matchMedia('(max-width: 760px)');
-
 function renderNotes() {
   const items = [
     ...(lastNotes.error ? [el('li', { className: 'error', textContent: t(lastNotes.error) })] : []),
@@ -163,7 +166,8 @@ function renderNotes() {
   ];
   notesEl.replaceChildren(...items);
   notesBox.hidden = !items.length;
-  notesBox.open = notesOpen ?? !narrow.matches;
+  // Folded until asked for, so the notes do not cover the preview.
+  notesBox.open = notesOpen ?? false;
   notesBox.className = lastNotes.error ? 'error' : lastNotes.notes.some((n) => n.level === 'warn') ? 'warn' : '';
   $('#notes-label').textContent = t('app.notes', { n: items.length });
 }
@@ -452,8 +456,7 @@ function open(generator: GeneratorId, values: Record<string, unknown>) {
   fitPending = true;
   lastNotes = { notes: [] };
   save();
-  renderChrome();
-  rebuild();
+  show(false);
 }
 
 /** Offer the parts of the finished model for separate export and, if they fit together, the assembled view. */
@@ -474,8 +477,22 @@ function renderParts(names: string[], canAssemble: boolean) {
 
 function renderChrome() {
   // Titles may carry soft hyphens for the narrow buttons.
-  document.title = `Genstrio – ${t(`${current}.title`).replace(/\u00ad/g, '')}`;
-  $('#tagline').textContent = t('app.tagline');
+  const title = t(`${current}.title`).replace(/\u00ad/g, '');
+  document.title = atHome ? 'Genstrio' : `Genstrio – ${title}`;
+  $('#title').textContent = title;
+  $('#home-tagline').textContent = t('app.tagline');
+  $('#home-question').textContent = t('app.homeQuestion');
+  $('#settings-title').textContent = t('app.settings');
+  $('#lang-label').textContent = t('app.language');
+  $('#unit-label').textContent = t('app.unit');
+  $('#settings-close').textContent = t('app.close');
+  for (const button of document.querySelectorAll<HTMLButtonElement>('.settings-open')) {
+    button.title = t('app.settings');
+    button.setAttribute('aria-label', t('app.settings'));
+  }
+  const homeButton = $<HTMLButtonElement>('#home-button');
+  homeButton.title = t('app.home');
+  homeButton.setAttribute('aria-label', t('app.home'));
   $('#desc').textContent = t(`${current}.desc`);
   $('#hint').textContent = t('app.viewerHint');
   $('#export-label').textContent = t('app.export');
@@ -490,7 +507,7 @@ function renderChrome() {
   $('#file-save').textContent = t('app.fileSave');
   $('#file-open').textContent = t('app.fileOpen');
   $<HTMLInputElement>('#tpl-name').placeholder = t('app.templateName');
-  $('#version').textContent = `Genstrio ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}`;
+  for (const link of document.querySelectorAll('.version')) link.textContent = `Genstrio ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}`;
   assembledEl.textContent = t('app.assembled');
   onlyEl.setAttribute('aria-label', t('app.parts'));
   // A mesh has no CAD geometry to write as STEP.
@@ -500,17 +517,15 @@ function renderChrome() {
   }
   partNames = '';
   renderTemplates();
-  $('#lang').textContent = getLang() === 'de' ? 'EN' : 'DE';
-  unitEl.setAttribute('aria-label', t('app.unit'));
-  unitEl.title = t('app.unit');
+  langEl.value = getLang();
   toolsEl.setAttribute('aria-label', t('app.tools'));
 
+  // The start page: one card per generator.
   toolsEl.replaceChildren(
     ...GENERATOR_IDS.map((id) => {
-      const button = el('button', { type: 'button', className: id === current ? 'active' : '' });
+      const button = el('button', { type: 'button' });
       button.innerHTML = ICONS[id];
-      button.append(el('span', { textContent: t(`${id}.title`) }));
-      button.setAttribute('aria-pressed', String(id === current));
+      button.append(el('strong', { textContent: t(`${id}.title`).replace(/\u00ad/g, '') }), el('span', { textContent: t(`${id}.desc`) }));
       button.addEventListener('click', () => select(id));
       return button;
     }),
@@ -520,15 +535,40 @@ function renderChrome() {
   renderStatus();
 }
 
+// --- start page and generator -------------------------------------------------
+
+/** Whether the start page is showing rather than a generator. */
+let atHome = true;
+
+function show(home: boolean) {
+  atHome = home;
+  homeEl.hidden = !home;
+  appEl.hidden = home;
+  renderChrome();
+  if (!home) rebuild();
+}
+
+/** Open a generator from the start page; the browser's back button leads back there. */
 function select(id: GeneratorId) {
-  if (id === current) return;
   current = id;
   fitPending = true;
   lastNotes = { notes: [] };
   save();
-  renderChrome();
-  rebuild();
+  if (history.state?.view !== 'app') history.pushState({ view: 'app' }, '');
+  show(false);
 }
+
+$('#home-button').addEventListener('click', () => {
+  // Step back if the start page is where we came from, so "forward" returns to the generator.
+  if (history.state?.view === 'app' && cameFromHome) history.back();
+  else show(true);
+});
+window.addEventListener('popstate', (event) => show((event.state as { view?: string } | null)?.view !== 'app'));
+for (const button of document.querySelectorAll('.settings-open')) button.addEventListener('click', () => settingsEl.showModal());
+// A click on the backdrop closes the settings, like the button does.
+settingsEl.addEventListener('click', (event) => {
+  if (event.target === settingsEl) settingsEl.close();
+});
 
 exportEl.append(
   ...FORMATS.map((format) => {
@@ -620,15 +660,17 @@ unitEl.addEventListener('change', () => {
   renderNotes();
   renderStatus();
 });
-$('#lang').addEventListener('click', () => {
-  setLang(getLang() === 'de' ? 'en' : 'de');
+langEl.addEventListener('change', () => {
+  setLang(langEl.value as Lang);
   langChosen = true;
   save();
   renderChrome();
 });
 
-renderChrome();
-rebuild();
+// A shared link opens its generator directly; otherwise the start page comes first.
+const cameFromHome = !sharedLink;
+history.replaceState({ view: sharedLink ? 'app' : 'home' }, '');
+show(!sharedLink);
 
 // When started through ./genstrio, an open event stream tells the local
 // server that a tab is still using it. On static hosting the ping just 404s.

@@ -8,7 +8,7 @@ Parametric generators for 3D printing. Enter a few dimensions, watch the model b
 
 Genstrio runs entirely in your browser: the geometry is computed locally by a real CAD kernel (OpenCascade compiled to WebAssembly). No account, no upload, no server-side processing – pictures you load for a relief, a cutter or a lithophane never leave your computer either.
 
-The interface is in English; the **DE** button in the header switches to German.
+The start page asks what you would like to print; the house symbol leads back to it from any generator. The interface starts in English; language and unit of length are set behind the cog symbol.
 
 [![Genstrio with an electronics enclosure, its lid engraved with text](docs/images/enclosure.png)](docs/images/enclosure.png)
 
@@ -29,6 +29,8 @@ The interface is in English; the **DE** button in the header switches to German.
 | **Lithophane** | A photo as a relief that only becomes a picture against the light: a flat panel, curved (stands on its own) or a cylinder for a lamp shade. Thinnest and thickest spot, frame and negative are adjustable; the preview shows the picture the way it looks lit from behind. Exports as STL or 3MF. |
 
 ### Screenshots
+
+[![The start page: one card per generator](docs/images/home.png)](docs/images/home.png)
 
 | | |
 | --- | --- |
@@ -87,7 +89,7 @@ Set `GENSTRIO_PORT` to use a port other than 4173.
 - **3MF** contains each part as a separate object.
 - **STEP** contains the exact CAD geometry, for further editing in FreeCAD, Fusion and the like. A lithophane is a triangle mesh and can therefore only be saved as STL or 3MF.
 
-Dimensions can be shown and entered in millimetres, centimetres or inches (selector at the top of the panel; inches also as fractions such as `3 1/2`); exported files are always in millimetres. If a model has several parts, the selector below the export buttons lets you download just one of them, for example only the lid. The drawer organizer exports each box size once; the app tells you how many to print.
+Dimensions can be shown and entered in millimetres, centimetres or inches (selector in the settings behind the cog symbol; inches also as fractions such as `3 1/2`); exported files are always in millimetres. If a model has several parts, the selector below the export buttons lets you download just one of them, for example only the lid. The drawer organizer exports each box size once; the app tells you how many to print.
 
 ## Saving your work
 

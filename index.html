@@ -10,18 +10,42 @@
     <title>Genstrio</title>
   </head>
   <body>
-    <div id="app">
+    <div id="home">
+      <header>
+        <img src="./icon.svg" alt="" width="44" height="44" />
+        <div>
+          <h1>Genstrio</h1>
+          <p id="home-tagline"></p>
+        </div>
+        <button type="button" class="ghost icon settings-open"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.900l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.500V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.9-2.900l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.800l-.1-.1a2 2 0 1 1 2.9-2.900l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.500V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.9 2.900l-.1.1a1.7 1.7 0 0 0-.3 1.800v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+      </header>
+      <h2 id="home-question"></h2>
+      <nav id="tools"></nav>
+      <a id="home-version" class="version" href="https://github.com/TechnikWeber/Genstrio" target="_blank" rel="noopener"></a>
+    </div>
+    <dialog id="settings">
+      <form method="dialog">
+        <h2 id="settings-title"></h2>
+        <label for="lang" id="lang-label"></label>
+        <select id="lang">
+          <option value="de">Deutsch</option>
+          <option value="en">English</option>
+        </select>
+        <label for="unit" id="unit-label"></label>
+        <select id="unit"></select>
+        <button id="settings-close" class="ghost"></button>
+      </form>
+    </dialog>
+    <div id="app" hidden>
       <aside class="panel">
         <header>
-          <img src="./icon.svg" alt="" width="34" height="34" />
+          <button id="home-button" type="button" class="ghost icon"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h5v-6h4v6h5V9.5"/></svg></button>
           <div>
-            <h1>Genstrio</h1>
-            <p id="tagline"></p>
+            <h1 id="title"></h1>
+            <p id="tagline">Genstrio</p>
           </div>
-          <select id="unit"></select>
-          <button id="lang" type="button" class="ghost"></button>
+          <button type="button" class="ghost icon settings-open"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.900l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.500V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.9-2.900l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.800l-.1-.1a2 2 0 1 1 2.9-2.900l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.500V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.9 2.900l-.1.1a1.7 1.7 0 0 0-.3 1.800v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
         </header>
-        <nav id="tools"></nav>
         <p id="desc"></p>
         <select id="template"></select>
         <form id="params" autocomplete="off" onsubmit="return false"></form>
@@ -44,7 +68,7 @@
               <button id="reset" type="button" class="ghost"></button>
             </div>
           </details>
-          <a id="version" href="https://github.com/TechnikWeber/Genstrio" target="_blank" rel="noopener"></a>
+          <a id="version" class="version" href="https://github.com/TechnikWeber/Genstrio" target="_blank" rel="noopener"></a>
         </footer>
       </aside>
       <main>

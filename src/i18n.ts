@@ -5,6 +5,11 @@ export type Lang = 'de' | 'en';
 type Dict = Record<string, string>;
 
 const de: Dict = {
+  'app.homeQuestion': 'Was möchtest du drucken?',
+  'app.home': 'Zur Auswahl',
+  'app.settings': 'Einstellungen',
+  'app.language': 'Sprache',
+  'app.close': 'Schließen',
   'gear.title': 'Zahnräder',
   'gear.desc': 'Evolventen-Zahnräder nach Modul und Zähnezahl – gerade, schräg oder pfeilverzahnt, einzeln oder als passendes Paar – und Zahnstangen.',
   'gear.group.teeth': 'Verzahnung',
@@ -930,6 +935,11 @@ const de: Dict = {
 };
 
 const en: Dict = {
+  'app.homeQuestion': 'What would you like to print?',
+  'app.home': 'Back to the overview',
+  'app.settings': 'Settings',
+  'app.language': 'Language',
+  'app.close': 'Close',
   'gear.title': 'Gears',
   'gear.desc': 'Involute gears by module and tooth count – spur, helical or herringbone, single or as a matching pair – and racks.',
   'gear.group.teeth': 'Teeth',
