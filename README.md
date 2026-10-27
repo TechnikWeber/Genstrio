@@ -1,5 +1,14 @@
 # Genstrio
 
+<p>
+  <img alt="Status: stable" src="https://img.shields.io/badge/status-stable-brightgreen">
+  <a href="https://github.com/TechnikWeber/Genstrio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/TechnikWeber/Genstrio?include_prereleases&label=release"></a>
+  <a href="https://github.com/TechnikWeber/Genstrio/actions/workflows/pages.yml"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/TechnikWeber/Genstrio/pages.yml?branch=main&label=build"></a>
+  <img alt="Platform: browser" src="https://img.shields.io/badge/platform-browser-blue">
+  <img alt="UI: English | Deutsch" src="https://img.shields.io/badge/UI-English%20%7C%20Deutsch-informational">
+  <a href="LICENSE"><img alt="License: AGPL-3.0-or-later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-green"></a>
+</p>
+
 **[▶ Open Genstrio in your browser](https://technikweber.github.io/Genstrio/)** – nothing to install.
 
 Parametric generators for 3D printing. Enter a few dimensions, watch the model being built in 3D, and download it as **STL**, **3MF** or **STEP**.
