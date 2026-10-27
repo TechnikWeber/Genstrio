@@ -1,5 +1,3 @@
-**English** · [Deutsch](README.de.md)
-
 # Genstrio
 
 **[▶ Open Genstrio in your browser](https://technikweber.github.io/Genstrio/)** – nothing to install.
