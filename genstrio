@@ -26,10 +26,24 @@ Environment: GENSTRIO_PORT (default 4173)
 EOF
 }
 
+node_hint() {
+  echo "  Fedora:            sudo dnf install nodejs" >&2
+  echo "  Debian 13+:        sudo apt install nodejs npm" >&2
+  echo "  Ubuntu, Mint, older Debian: the system package is too old here (Ubuntu 24.04 has 18);" >&2
+  echo "                     take the current LTS from https://nodejs.org/en/download" >&2
+}
+
 need_node() {
   if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
     echo "Genstrio needs Node.js 20.19 or newer (https://nodejs.org)." >&2
-    echo "  Fedora: sudo dnf install nodejs    Debian/Ubuntu: sudo apt install nodejs npm" >&2
+    node_hint
+    exit 1
+  fi
+  # Vite needs 20.19+ or 22.12+; an older Node fails later with a confusing error.
+  if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);
+      process.exit(a>22||(a===22&&b>=12)||(a===20&&b>=19)?0:1)'; then
+    echo "Genstrio needs Node.js 20.19+ or 22.12+, this is $(node -v)." >&2
+    node_hint
     exit 1
   fi
 }

@@ -61,7 +61,7 @@ What is planned next is in the [Roadmap](#roadmap).
 
 ## Run it locally
 
-The hosted version above is all you need. To run Genstrio on your own machine, you need [Node.js](https://nodejs.org) 20.19 or newer.
+The hosted version above is all you need. To run Genstrio on your own machine, you need [Node.js](https://nodejs.org) 20.19 or newer. Fedora (`sudo dnf install nodejs`) and Debian 13 ship a recent enough version; on Ubuntu and Linux Mint the system package is too old, so take the LTS from [nodejs.org](https://nodejs.org/en/download).
 
 ```bash
 git clone https://github.com/TechnikWeber/Genstrio.git && cd Genstrio && ./genstrio
