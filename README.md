@@ -4,7 +4,6 @@
   <img alt="Status: stable" src="https://img.shields.io/badge/status-stable-brightgreen">
   <a href="https://github.com/TechnikWeber/Genstrio/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/TechnikWeber/Genstrio?include_prereleases&label=download&color=2ea44f"></a>
   <a href="https://github.com/TechnikWeber/Genstrio/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/TechnikWeber/Genstrio/total?color=blue"></a>
-  <a href="https://github.com/TechnikWeber/Genstrio/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/TechnikWeber/Genstrio?style=flat&color=yellow"></a>
   <a href="https://github.com/TechnikWeber/Genstrio/actions/workflows/pages.yml"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/TechnikWeber/Genstrio/pages.yml?branch=main&label=build"></a>
   <img alt="Platform: browser" src="https://img.shields.io/badge/platform-browser-blue">
   <img alt="UI: English | Deutsch" src="https://img.shields.io/badge/UI-English%20%7C%20Deutsch-informational">
