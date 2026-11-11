@@ -19,6 +19,8 @@ The start page asks what you would like to print; the house symbol leads back to
 
 [![Genstrio with an electronics enclosure, its lid engraved with text](docs/images/enclosure.png)](docs/images/enclosure.png)
 
+**Contents:** [Generators](#generators) · [Run it locally](#run-it-locally) · [Hosting](#hosting) · [Using the exports](#using-the-exports) · [Saving your work](#saving-your-work) · [Development](#development) · [Roadmap](#roadmap) · [License](#license)
+
 ## Generators
 
 | Generator | What it makes |
